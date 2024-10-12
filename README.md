@@ -1,11 +1,11 @@
-# PurePlay AntiCheat (WIP)
-**Free, Open-Source AntiCheat for Competitive Game Developers**
+# PurePlay Anti-Cheat (WIP)
+**Free, Open-Source Anti-Cheat for Competitive Game Developers**
 - *Note: This project is in development and is currently acting as my college Capstone project. It is not a working product.*
 
 ## Project Overview
-**PurePlay AntiCheat** is an easy-to-implement, open-source anticheat solution designed to help game developers detect inhuman inputs across GamePad, Mouse, and Keyboard. By leveraging trained neural networks, the API can identify input sources using external devices or software cheats such as Xim, Cronus, or custom Arduino-based setups.
+**PurePlay Anti-Cheat** is an easy-to-implement, open-source anticheat solution designed to help game developers detect inhuman inputs across GamePad, Mouse, and Keyboard. By leveraging trained neural networks, the anti-cheat program can identify input sources using external devices or software cheats such as Xim, Cronus, or custom Arduino-based setups.
 
-This solution is perfect for **low-budget game developers** who need a reliable anticheat system that doesn’t require extensive networking integration or costly licensing. As it is only designed to catch external cheating sources, it is recommended to be used alongside an anticheat capable of catching memory-based cheats.
+This solution is perfect for **low-budget game developers** who need a reliable anti-cheat system that doesn’t require extensive networking integration or costly licensing. As it is only designed to catch external cheating sources, it is recommended to be used alongside an anti-cheat capable of catching memory-based cheats.
 
 ## Features
 - 🎮 **Supports GamePad, Mouse, and Keyboard Inputs**
@@ -31,7 +31,7 @@ This solution is perfect for **low-budget game developers** who need a reliable 
 
 ## Getting Started
 ### Installation
-To get started with **PurePlay AntiCheat**, clone the repository and install the necessary dependencies.
+To get started with **PurePlay Anti-Cheat**, clone the repository and install the necessary dependencies.
 
 ```bash
 git clone https://github.com/Beanthief/PurePlay-Anti-Cheat
