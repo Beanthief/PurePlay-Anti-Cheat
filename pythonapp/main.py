@@ -45,6 +45,6 @@ clickModel = models.RNN(inputCount=5,
                       sequenceLength=2, 
                       classCount=2).to(device)
 
-models.plotPredictions(keyModel, keyTrain, keyTest)
-models.plotPredictions(moveModel, moveTrain, moveTest)
-models.plotPredictions(clickModel, clickTrain, clickTest)
+keyModel.plotPredictions(keyTrain, keyTest)
+moveModel.plotPredictions(moveTrain, moveTest)
+clickModel.plotPredictions(clickTrain, clickTest)
