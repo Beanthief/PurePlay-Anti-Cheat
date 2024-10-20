@@ -5,11 +5,125 @@ import XInput # Requires polling, handles controllers
 import time
 import csv
 
-# Draw configs from file
-delayPrecision = 3
-batchDelay = 5
+class InputListener(XInput.EventHandler):
+    def __init__(self, 
+                 writeDelay,  
+                 captureKeyboard=True, 
+                 captureMouse=True, 
+                 captureController=True,
+                 outputToFile=True):
+        self.writeDelay = writeDelay
+        self.captureKeyboard = captureKeyboard
+        self.captureMouse = captureMouse
+        self.captureController = captureController
+        self.outputToFile = outputToFile
 
-# Consider using sklearn.preprocessing.LabelEncoder and StandardScaler
+        self.startTime = time.time()
+        self.lastKeyTime = self.startTime
+        self.lastMoveTime = self.startTime
+        self.lastClickTime = self.startTime
+        self.lastStickTime = self.startTime
+        self.lastButtonTime = self.startTime
+        self.lastTriggerTime = self.startTime
+
+        self.inputMatrix = [[],[],[],[],[],[]]
+
+    def start(self):
+        print("Thread Started")
+        if self.captureKeyboard:
+            self.keyboardListener = pynput.keyboard.Listener(
+                on_press=self.handleKeyPress,
+                on_release=self.handleKeyRelease)
+            self.keyboardListener.start()
+        if self.captureMouse:
+            self.mouseListener=pynput.mouse.Listener(
+                on_move=self.handleMoveEvent,
+                on_click=self.handleClickEvent)
+            self.mouseListener.start()
+        if self.captureController:
+            # Check only performed on initialization... poll? 
+            # also, generate different files per controller?
+            connectedControllers = XInput.get_connected()
+            if connectedControllers:
+                controllerHandler = self(*connectedControllers)
+                self.gamepadListener = XInput.GamepadThread(controllerHandler)
+                self.gamepadListener.start()
+            else:
+                print("No controllers connected.")
+        if self.outputToFile:
+            while(self): # Will this run in a separate thread?
+                time.sleep(self.writeDelay)
+                self.batchToFile()
+
+    def batchToFile(self):
+        try:
+            with open("data/kb.csv", "w", newline="") as file:
+                writer=csv.writer(file)
+                for input in self.inputMatrix[0]:
+                    writer.writerow(input)
+            with open("data/mmove.csv", "w", newline="") as file:
+                writer=csv.writer(file)
+                for input in self.inputMatrix[1]:
+                    writer.writerow(input)
+            with open("data/mclick.csv", "w", newline="") as file:
+                writer=csv.writer(file)
+                for input in self.inputMatrix[2]:
+                    writer.writerow(input)
+            with open("data/stick.csv", "w", newline="") as file:
+                writer = csv.writer(file)
+                for input in self.inputMatrix[3]:
+                    writer.writerow(input)
+            with open("data/button.csv", "w", newline="") as file:
+                writer = csv.writer(file)
+                for input in self.inputMatrix[4]:
+                    writer.writerow(input)
+            with open("data/trigger.csv", "w", newline="") as file:
+                writer = csv.writer(file)
+                for input in self.inputMatrix[5]:
+                    writer.writerow(input)
+            self.inputMatrix.clear() # Will this delete the arrays?
+        except KeyboardInterrupt:
+            print("Stopped")
+            self.mouseListener.stop()
+            self.keyboardListener.stop()
+            self.gamepadListener.stop()
+
+    def handleKeyPress(self, key):
+        delay = time.time() - self.lastKeyTime
+        self.lastKeyTime = time.time()
+        self.inputMatrix[0].append((1, key, delay))
+
+    def handleKeyRelease(self, key):
+        delay = time.time() - self.lastKeyTime
+        self.lastKeyTime = time.time()
+        self.inputMatrix[0].append((0, key, delay))
+
+    def handleMoveEvent(self, x, y):
+        delay = time.time() - self.lastMoveTime
+        self.lastMoveTime = time.time()
+        self.inputMatrix[1].append((x, y, delay))
+
+    def handleClickEvent(self, x, y, button, pressed):
+        delay = time.time() - self.lastClickTime
+        self.lastClickTime = time.time()
+        self.inputMatrix[2].append((pressed, x, y, button, delay))
+    
+    def process_stick_event(self, event):
+        delay = time.time() - self.lastStickTime
+        self.lastStickTime = time.time()
+        self.inputMatrix[3].append((event.user_index, event.stick, event.x, event.y, delay))
+    
+    def process_button_event(self, event):
+        delay = time.time() - self.lastButtonTime
+        self.lastButtonTime = time.time()
+        self.inputMatrix[4].append((event.type, event.user_index, event.button, delay))
+    
+    def process_trigger_event(self, event):
+        delay = time.time() - self.lastTriggerTime
+        self.lastTriggerTime = time.time()
+        self.inputMatrix[5].append((event.type, event.user_index, event.trigger, delay))
+
+# Backup direct mapping if necessary
 inputMap = {
     Key.alt: 1,
     Key.alt_gr: 2,
@@ -125,112 +239,3 @@ inputMap = {
     Button.right:118,
     Button.middle:119
 }
-
-keyList = []
-moveList = []
-clickList = []
-stickList = []
-buttonList = []
-triggerList = []
-
-startTime = time.time()
-lastKeyTime = startTime
-lastMoveTime = startTime
-lastClickTime = startTime
-lastStickTime = startTime
-lastButtonTime = startTime
-lastTriggerTime = startTime
-
-def on_kpress(key):
-    global lastKeyTime
-    delay = time.time() - lastKeyTime
-    lastKeyTime = time.time()
-    keyList.append((1, key, round(delay, ndigits=delayPrecision)))
-def on_krelease(key):
-    global lastKeyTime
-    delay = time.time() - lastKeyTime
-    lastKeyTime = time.time()
-    keyList.append((0, key, round(delay, ndigits=delayPrecision)))
-def on_mmove(x, y):
-    global lastMoveTime
-    delay = time.time() - lastMoveTime
-    lastMoveTime = time.time()
-    moveList.append((x, y, round(delay, ndigits=delayPrecision)))
-def on_mclick(x, y, button, pressed):
-    global lastClickTime
-    delay = time.time() - lastClickTime
-    lastClickTime = time.time()
-    clickList.append((pressed, x, y, button, round(delay, ndigits=delayPrecision)))
-
-mouseListener = pynput.mouse.Listener(
-    on_move=on_mmove,
-    on_click=on_mclick)
-mouseListener.start()
-
-keyboardListener = pynput.keyboard.Listener(
-    on_press=on_kpress,
-    on_release=on_krelease)
-keyboardListener.start()
-
-class GamepadHandler(XInput.EventHandler):
-    def process_button_event(self, event):
-        global lastButtonTime
-        delay = time.time() - lastButtonTime
-        lastButtonTime = time.time()
-        buttonList.append((event.type, event.user_index, event.button, round(delay, ndigits=delayPrecision)))
-
-    def process_trigger_event(self, event):
-        global lastTriggerTime
-        delay = time.time() - lastTriggerTime
-        lastTriggerTime = time.time()
-        triggerList.append((event.type, event.user_index, event.trigger, round(event.value, 2), round(delay, ndigits=delayPrecision)))
-
-    def process_stick_event(self, event):
-        global lastStickTime
-        delay = time.time() - lastStickTime
-        lastStickTime = time.time()
-        stickList.append((event.user_index, event.stick, round(event.x, 2), round(event.y, 2), round(delay, ndigits=delayPrecision)))
-
-# Check only performed on initialization... poll?
-connectedControllers = XInput.get_connected()
-if connectedControllers:
-    controllerHandler = GamepadHandler(*connectedControllers)
-    gamepadListener = XInput.GamepadThread(controllerHandler)
-    gamepadListener.start()
-else:
-    print("No controllers connected.")
-
-try:
-    while True:
-        time.sleep(batchDelay)
-        with open("data/kb.csv", "w", newline='') as file:
-            writer=csv.writer(file)
-            for input in keyList:
-                writer.writerow(input)
-        with open("data/mmove.csv", "w", newline='') as file:
-            writer=csv.writer(file)
-            for input in moveList:
-                writer.writerow(input)
-        with open("data/mclick.csv", "w", newline='') as file:
-            writer=csv.writer(file)
-            for input in clickList:
-                writer.writerow(input)
-        with open("data/stick.csv", "w", newline='') as file:
-            writer = csv.writer(file)
-            for input in stickList:
-                writer.writerow(input)
-        with open("data/button.csv", "w", newline='') as file:
-            writer = csv.writer(file)
-            for input in buttonList:
-                writer.writerow(input)
-        keyList.clear()
-        moveList.clear()
-        clickList.clear()
-        stickList.clear()
-        buttonList.clear()
-        
-except KeyboardInterrupt:
-    print("Stopped")
-    mouseListener.stop()
-    keyboardListener.stop()
-    gamepadListener.stop()
