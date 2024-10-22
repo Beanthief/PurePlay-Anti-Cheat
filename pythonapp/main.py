@@ -1,63 +1,77 @@
 import configparser
 import listener
 import sklearn
-import pandas
 import models
 import torch
-import os
+import time
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 config = configparser.ConfigParser()
 config.read("config.ini")
 dataDirectory = config["Data"]["dataDirectory"]
-dataType = config["Data"]["dataType"] # Check if this works
-splitRatio = config["Data"]["splitRatio"]
-writeDelay = config["Listener"]["writeDelay"]
+batchSize = config["Data"]["batchSize"] # Do I want a globally fixed batch size?
+splitRatio = config["Training"]["splitRatio"]
 captureKeyboard = config["Listener"]["captureKeyboard"]
 captureMouse = config["Listener"]["captureMouse"]
 captureController = config["Listener"]["captureController"]
-outputToFile = config["Listener"]["outputToFile"]
 displayGraph = config["Testing"]["displayGraph"]
 
-inputListener = listener.InputListener(writeDelay, 
-                                       captureKeyboard, 
+inputListener = listener.InputListener(captureKeyboard, 
                                        captureMouse, 
-                                       captureController, 
-                                       outputToFile)
+                                       captureController)
 inputListener.start()
 
-encoder = sklearn.preprocessing.LabelEncoder()
+# Next step
+keyboardModel = models.RNN()
+mouseMoveModel = models.RNN()
+mouseClickModel = models.RNN()
+joystickModel = models.RNN()
+buttonModel = models.RNN()
+triggerModel = models.RNN()
+
+encoder = sklearn.preprocessing.OneHotEncoder()
 scaler = sklearn.preprocessing.StandardScaler()
 
-# Is this really how I want to output? RNN vs FNN etc.
-# If I output this way, the files and matrix will grow indefinitely.
-# An alternative would be to only send the inputs once the matrix elements
-# reach a fixed batch size. This would allow me to clear the elements each time.
-# Would moderation want access to the files?
+def formatData(tensor):
+    encodedTensor = encoder.fit_transform(tensor)
+    scaledTensor = scaler.fit_transform(encodedTensor)
+    return scaledTensor
 
-while(True):
-    if outputToFile:
-        for file in os.listdir(dataDirectory):
-            path = os.path.join(dataDirectory, file)
-            data = pandas.read_csv(path, header=None)
-            data = data.apply(encoder.fit_transform)
-            data = scaler.fit_transform(data)
-            tensor = torch.tensor(data, dtype=dataType).to(device)
-            model = models.RNN(inputCount=3, 
-                    nodeCount=3, 
-                    layerCount=3, 
-                    sequenceLength=2, 
-                    classCount=2).to(device)
-            splitIndex = int(splitRatio * len(tensor))
-            trainSplit = tensor[:splitIndex]
-            testSplit = tensor[splitIndex:]
-            if displayGraph:
-                model.plotPredictions("Untrained Model", trainSplit, testSplit)
-            model.train()
-            if displayGraph:
-                model.plotPredictions("Trained Model", trainSplit, testSplit)
-    else:
-        tensor = torch.tensor()
-        for device, input in inputListener.inputMatrix:
-            #tensor.append?
+def splitData(tensor):
+    splitIndex = int(splitRatio * len(tensor))
+    trainSplit = tensor[:splitIndex]
+    testSplit = tensor[splitIndex:]
+    return trainSplit, testSplit
+
+while True:
+    time.sleep(10)
+    inputListener.save_to_file()
+
+    if captureKeyboard:
+        if len(inputListener.keyboardTensor) >= batchSize:
+            keyTrain, keyTest = splitData(formatData(inputListener.keyboardTensor)); 
+            inputListener.keyboardTensor = inputListener.keyboardTensor[batchSize:]
+            # Next step
+
+    if captureMouse:
+        if len(inputListener.mouseMoveTensor) >= batchSize:
+            moveTrain, moveTest = splitData(formatData(inputListener.mouseMoveTensor)); 
+            inputListener.mouseMoveTensor = inputListener.mouseMoveTensor[batchSize:]
+
+        if len(inputListener.mouseClickTensor) >= batchSize:
+            clickTrain, clickTest = splitData(formatData(inputListener.mouseClickTensor)); 
+            inputListener.mouseClickTensor = inputListener.mouseClickTensor[batchSize:]
+
+    if captureController:
+        if len(inputListener.joystickTensor) >= batchSize:
+            stickTrain, stickTest = splitData(formatData(inputListener.joystickTensor)); 
+            inputListener.joystickTensor = inputListener.joystickTensor[batchSize:]
+
+        if len(inputListener.buttonTensor) >= batchSize:
+            buttonTrain, buttonTest = splitData(formatData(inputListener.buttonTensor)); 
+            inputListener.buttonTensor = inputListener.buttonTensor[batchSize:]
+
+        if len(inputListener.triggerTensor) >= batchSize:
+            triggerTrain, triggerTest = splitData(formatData(inputListener.triggerTensor)); 
+            inputListener.triggerTensor = inputListener.triggerTensor[batchSize:]
