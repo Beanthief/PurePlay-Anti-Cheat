@@ -1,6 +1,6 @@
+from sklearn.preprocessing import StandardScaler
 import configparser
 import listener
-import sklearn
 import models
 import torch
 import time
@@ -9,69 +9,91 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 config = configparser.ConfigParser()
 config.read("config.ini")
-dataDirectory = config["Data"]["dataDirectory"]
-batchSize = config["Data"]["batchSize"] # Do I want a globally fixed batch size?
+batchSize = int(config["Data"]["batchSize"]) # Do I want a globally fixed batch size?
 splitRatio = config["Training"]["splitRatio"]
 captureKeyboard = config["Listener"]["captureKeyboard"]
 captureMouse = config["Listener"]["captureMouse"]
 captureController = config["Listener"]["captureController"]
+trainingMode = config["Testing"]["trainingMode"]
 displayGraph = config["Testing"]["displayGraph"]
 
-inputListener = listener.InputListener(captureKeyboard, 
-                                       captureMouse, 
+inputListener = listener.InputListener(captureKeyboard,
+                                       captureMouse,
                                        captureController)
 inputListener.start()
 
-# Next step
-keyboardModel = models.RNN()
-mouseMoveModel = models.RNN()
-mouseClickModel = models.RNN()
-joystickModel = models.RNN()
-buttonModel = models.RNN()
-triggerModel = models.RNN()
+# if trainingMode:
+#     if captureKeyboard:
+#         keyboardModel = models.RNN()
+#     if captureMouse:
+#         mouseMoveModel = models.RNN()
+#         mouseClickModel = models.RNN()
+#     if captureController:
+#         joystickModel = models.RNN()
+#         buttonModel = models.RNN()
+#         triggerModel = models.RNN()
+# else:
+#     if captureKeyboard:
+#         keyboardModel = torch.load("models/keyboard.pt")
+#     if captureMouse:
+#         mouseMoveModel = torch.load("models/mousemove.pt")
+#         mouseClickModel = torch.load("models/mouseclick.pt")
+#     if captureController:
+#         joystickModel = torch.load("models/joystick.pt")
+#         buttonModel = torch.load("models/button.pt")
+#         triggerModel = torch.load("models/trigger.pt")
 
-encoder = sklearn.preprocessing.OneHotEncoder()
-scaler = sklearn.preprocessing.StandardScaler()
+scaler = StandardScaler()
 
-def formatData(tensor):
-    encodedTensor = encoder.fit_transform(tensor)
-    scaledTensor = scaler.fit_transform(encodedTensor)
-    return scaledTensor
-
-def splitData(tensor):
+def split_data(tensor):
     splitIndex = int(splitRatio * len(tensor))
     trainSplit = tensor[:splitIndex]
     testSplit = tensor[splitIndex:]
     return trainSplit, testSplit
 
 while True:
-    time.sleep(10)
-    inputListener.save_to_file()
+    time.sleep(5)
 
-    if captureKeyboard:
-        if len(inputListener.keyboardTensor) >= batchSize:
-            keyTrain, keyTest = splitData(formatData(inputListener.keyboardTensor)); 
-            inputListener.keyboardTensor = inputListener.keyboardTensor[batchSize:]
-            # Next step
+    if trainingMode:
+        if captureKeyboard:
+            if len(inputListener.keyboardTensor) >= batchSize:
+                keyTrain, keyTest = split_data(scaler.fit_transform(inputListener.keyboardTensor)); 
+                inputListener.keyboardTensor = inputListener.keyboardTensor[batchSize:]
 
-    if captureMouse:
-        if len(inputListener.mouseMoveTensor) >= batchSize:
-            moveTrain, moveTest = splitData(formatData(inputListener.mouseMoveTensor)); 
-            inputListener.mouseMoveTensor = inputListener.mouseMoveTensor[batchSize:]
+        if captureMouse:
+            if len(inputListener.mouseMoveTensor) >= batchSize:
+                moveTrain, moveTest = split_data(scaler.fit_transform(inputListener.mouseMoveTensor)); 
+                inputListener.mouseMoveTensor = inputListener.mouseMoveTensor[batchSize:]
 
-        if len(inputListener.mouseClickTensor) >= batchSize:
-            clickTrain, clickTest = splitData(formatData(inputListener.mouseClickTensor)); 
-            inputListener.mouseClickTensor = inputListener.mouseClickTensor[batchSize:]
+            if len(inputListener.mouseClickTensor) >= batchSize:
+                clickTrain, clickTest = split_data(scaler.fit_transform(inputListener.mouseClickTensor)); 
+                inputListener.mouseClickTensor = inputListener.mouseClickTensor[batchSize:]
 
-    if captureController:
-        if len(inputListener.joystickTensor) >= batchSize:
-            stickTrain, stickTest = splitData(formatData(inputListener.joystickTensor)); 
-            inputListener.joystickTensor = inputListener.joystickTensor[batchSize:]
+        if captureController:
+            if len(inputListener.joystickTensor) >= batchSize:
+                stickTrain, stickTest = split_data(scaler.fit_transform(inputListener.joystickTensor)); 
+                inputListener.joystickTensor = inputListener.joystickTensor[batchSize:]
 
-        if len(inputListener.buttonTensor) >= batchSize:
-            buttonTrain, buttonTest = splitData(formatData(inputListener.buttonTensor)); 
-            inputListener.buttonTensor = inputListener.buttonTensor[batchSize:]
+            if len(inputListener.buttonTensor) >= batchSize:
+                buttonTrain, buttonTest = split_data(scaler.fit_transform(inputListener.buttonTensor)); 
+                inputListener.buttonTensor = inputListener.buttonTensor[batchSize:]
 
-        if len(inputListener.triggerTensor) >= batchSize:
-            triggerTrain, triggerTest = splitData(formatData(inputListener.triggerTensor)); 
-            inputListener.triggerTensor = inputListener.triggerTensor[batchSize:]
+            if len(inputListener.triggerTensor) >= batchSize:
+                triggerTrain, triggerTest = split_data(scaler.fit_transform(inputListener.triggerTensor)); 
+                inputListener.triggerTensor = inputListener.triggerTensor[batchSize:]
+    else:
+        # confidence = 1
+        # if captureKeyboard:
+        #     with torch.inference_mode():
+        #         confidence *= keyboardModel(scaler.fit_transform(inputListener.keyboardTensor))
+
+        # if captureMouse:
+        #     with torch.inference_mode():
+        #         confidence *= mouseMoveModel(scaler.fit_transform(inputListener.mouseMoveTensor))
+        #         confidence *= mouseClickModel(scaler.fit_transform(inputListener.mouseClickTensor))
+
+        # if captureController:
+        #     with torch.inference_mode():
+        #         confidence *= joystickModel(scaler.fit_transform(inputListener.joystickTensor))
+        #         confidence *= buttonModel(scaler.fit_transform(inputListener.buttonTensor))
+        #         confidence *= triggerModel(scaler.fit_transform(inputListener.triggerTensor))
