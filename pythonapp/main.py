@@ -51,6 +51,8 @@ def split_data(tensor):
     testSplit = tensor[splitIndex:]
     return trainSplit, testSplit
 
+# ADD PLOT_PREDICTIONS EXTERNALLY (the predictions are by batch, not per input)
+
 while True:
     time.sleep(5)
 

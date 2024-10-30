@@ -1,34 +1,38 @@
 import torch
 import matplotlib.pyplot as plot
 
-class RNN(torch.nn.Module):
-    def __init__(self, inputCount, nodeCount, layerCount, sequenceLength, classCount):
-        super(RNN, self).__init__()
-        self.inputCount = inputCount
-        self.nodeCount = nodeCount
+class LSTM(torch.nn.Module):
+    def __init__(self, inputSize, hiddenSize, outputSize, layerCount, device):
+        super(LSTM, self).__init__()
+        self.inputSize = inputSize
+        self.hiddenSize = hiddenSize
+        self.outputSize = outputSize
         self.layerCount = layerCount
-        self.sequenceLength = sequenceLength
-        self.classCount = classCount
-        self.network = torch.nn.RNN(inputCount, nodeCount, layerCount)
-        self.fcnetwork = torch.nn.Linear(nodeCount*sequenceLength, classCount)
+        self.device = device
+        self.lstm = torch.nn.LSTM(self.inputSize, self.hiddenSize, self.layerCount, batch_first=True)
+        self.outputLayer = torch.nn.Linear(self.hiddenSize, self.outputSize)
 
     def forward(self, input):
-        hiddenState0 = torch.zeros(self.layerCount, input.size(0), self.nodeCount)
-        output, _ = self.network(input, hiddenState0)
-        output = output.reshape(output.shape[0], -1)
-        output = self.fcnetwork(output)
-        return output
-    
-    def plot_predictions(self, title, trainSplit, testSplit, predictions=None):
-        plot.figure(figsize=(10, 10))
-        plot.scatter(trainSplit, trainSplit, c="b", s=6, label="Training Data")
-        plot.scatter(testSplit, testSplit, c="g", s=6, label="Testing Data")
-        with torch.inference_mode():
-            predictions = self(testSplit)
-        plot.scatter(testSplit, predictions, c="r", s=6, label="Predictions")
-        plot.legend(prop={"size":14})
-        plot.title(title)
-        plot.show()
+        hiddenState = torch.zeros(1, input.size(0), self.hiddenSize).to(self.device)
+        cellState = torch.zeros(1, input.size(0), self.hiddenSize).to(self.device)
+        output, _ = self.lstm(input, (hiddenState, cellState))
+        return self.outputLayer(output[:, -1, :])
 
-    def train(self, learnRate):
-        print()
+    def train(self, xTrain, yTrain, epochs, learningRate):
+        optimizer = torch.optim.Adam(self.parameters(), lr=learningRate)
+        for epoch in range(epochs):
+            self.train()
+            optimizer.zero_grad()
+            prediction = self(xTrain)
+            loss = torch.nn.BCEWithLogitsLoss(prediction, yTrain)
+            loss.backward()
+            optimizer.step()
+            if (epoch + 1) % 5 == 0:
+                print(f"Epoch [{(epoch + 1) / epochs}], Loss: {loss.item():.4f}")
+        print("Training Finished")
+
+class Transformer(torch.nn.Module):
+    def __init__(self, ):
+        super(Transformer, self).__init__()
+
+    def forward(self, ):
