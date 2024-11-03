@@ -1,43 +1,33 @@
 import pynput
 from pynput.keyboard import Key, KeyCode
 from pynput.mouse import Button
-#import XInput
+import XInput
 import torch
 import time
 
-#class InputListener(XInput.EventHandler):
-class InputListener():
-    def __init__(self,   
-                 captureKeyboard=True, 
-                 captureMouse=True, 
-                 captureController=True):
-
+class InputListener(XInput.EventHandler):
+    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True):
         self.captureKeyboard = captureKeyboard
         self.captureMouse = captureMouse
         self.captureController = captureController
 
+        connectedControllers = XInput.get_connected()
+        if any(connectedControllers) and captureController:
+            super().__init__() # Pass connected controllers
+        else:
+            self.captureController = False
+
         self.startTime = time.time()
-        self.lastKeyTime = self.startTime
-        self.lastMoveTime = self.startTime
-        self.lastClickTime = self.startTime
-        self.lastStickTime = self.startTime
         self.lastButtonTime = self.startTime
+        self.lastMoveTime = self.startTime
+        self.lastStickTime = self.startTime
         self.lastTriggerTime = self.startTime
 
-        self.keyboardTensor = torch.empty((0, 3))   # [pressed, key, delay]
-        self.mouseMoveTensor = torch.empty((0, 3))  # [x, y, delay]
-        self.mouseClickTensor = torch.empty((0, 5)) # [pressed, x, y, button, delay]
-        self.joystickTensor = torch.empty((0, 5))   # [user_index, stick, x, y, delay]
-        self.buttonTensor = torch.empty((0, 4))     # [type, user_index, button, delay]
-        self.triggerTensor = torch.empty((0, 4))    # [type, user_index, trigger, delay]
-
-        # connectedControllers = XInput.get_connected()
-        # if captureController and connectedControllers:
-        #     super().__init__()  # Initialize the EventHandler parent class
-        # else:
-        #     print("No Controllers Detected")
-
-        self.inputMap = {
+        self.moveTensor = torch.empty((0, 3))    #[x, y, delay]
+        self.stickTensor = torch.empty((0, 4))   #[stickID, x, y, delay]
+        self.triggerTensor = torch.empty((0, 3)) #[triggerID, value, delay]
+        self.buttonTensor = torch.empty((0, 4))  #[deviceType, isPressed, buttonID, delay]
+        self.buttonMap = {
             Key.alt: 1,
             Key.alt_gr: 2,
             Key.alt_l: 3,
@@ -110,75 +100,166 @@ class InputListener():
             KeyCode.from_char('y'): 79,
             KeyCode.from_char('z'): 80,
             
-            #Mouse Buttons
-            Button.left:81,
-            Button.right:82,
-            Button.middle:83
+            KeyCode.from_char('A'): 81,
+            KeyCode.from_char('B'): 82,
+            KeyCode.from_char('C'): 83,
+            KeyCode.from_char('D'): 84,
+            KeyCode.from_char('E'): 85,
+            KeyCode.from_char('F'): 86,
+            KeyCode.from_char('G'): 87,
+            KeyCode.from_char('H'): 88,
+            KeyCode.from_char('I'): 89,
+            KeyCode.from_char('J'): 90,
+            KeyCode.from_char('K'): 91,
+            KeyCode.from_char('L'): 92,
+            KeyCode.from_char('M'): 93,
+            KeyCode.from_char('N'): 94,
+            KeyCode.from_char('O'): 95,
+            KeyCode.from_char('P'): 96,
+            KeyCode.from_char('Q'): 97,
+            KeyCode.from_char('R'): 98,
+            KeyCode.from_char('S'): 99,
+            KeyCode.from_char('T'): 100,
+            KeyCode.from_char('U'): 101,
+            KeyCode.from_char('V'): 102,
+            KeyCode.from_char('W'): 103,
+            KeyCode.from_char('X'): 104,
+            KeyCode.from_char('Y'): 105,
+            KeyCode.from_char('Z'): 106,
+            
+            KeyCode.from_char('1'): 107,
+            KeyCode.from_char('2'): 108,
+            KeyCode.from_char('3'): 109,
+            KeyCode.from_char('4'): 110,
+            KeyCode.from_char('5'): 111,
+            KeyCode.from_char('6'): 112,
+            KeyCode.from_char('7'): 113,
+            KeyCode.from_char('8'): 114,
+            KeyCode.from_char('9'): 115,
+            KeyCode.from_char('0'): 116,
+
+            KeyCode.from_char('`'): 117,
+            KeyCode.from_char('~'): 118,
+            KeyCode.from_char('!'): 119,
+            KeyCode.from_char('@'): 120,
+            KeyCode.from_char('#'): 121,
+            KeyCode.from_char('$'): 122,
+            KeyCode.from_char('%'): 123,
+            KeyCode.from_char('^'): 124,
+            KeyCode.from_char('&'): 125,
+            KeyCode.from_char('*'): 126,
+            KeyCode.from_char('('): 127,
+            KeyCode.from_char(')'): 128,
+            KeyCode.from_char('-'): 129,
+            KeyCode.from_char('_'): 130,
+            KeyCode.from_char('='): 131,
+            KeyCode.from_char('+'): 132,
+            KeyCode.from_char('['): 133,
+            KeyCode.from_char('{'): 134,
+            KeyCode.from_char(']'): 135,
+            KeyCode.from_char('}'): 136,
+            KeyCode.from_char('\''): 137,
+            KeyCode.from_char('|'): 138,
+            KeyCode.from_char(';'): 139,
+            KeyCode.from_char(':'): 140,
+            KeyCode.from_char('"'): 141,
+            KeyCode.from_char(','): 142,
+            KeyCode.from_char('<'): 143,
+            KeyCode.from_char('.'): 144,
+            KeyCode.from_char('>'): 145,
+            KeyCode.from_char('/'): 146,
+            KeyCode.from_char('?'): 147,
+
+            # Mouse Buttons
+            Button.left: 148,
+            Button.right: 149,
+            Button.middle: 150,
+
+            # Controller Buttons
+            "DPAD_UP": 151,
+            "DPAD_DOWN": 152,
+            "DPAD_LEFT": 153,
+            "DPAD_RIGHT": 154,
+            "START": 155,
+            "BACK": 156,
+            "LEFT_THUMB": 157,
+            "RIGHT_THUMB": 158,
+            "LEFT_SHOULDER": 159,
+            "RIGHT_SHOULDER": 160,
+            "A": 161,
+            "B": 162,
+            "X": 163,
+            "Y": 164
         }
 
     def start(self):
         if self.captureKeyboard:
             self.keyboardListener = pynput.keyboard.Listener(
-                on_press=self.handle_key_press,
-                on_release=self.handle_key_release)
+                on_press=self.process_key_press,
+                on_release=self.process_key_release)
             self.keyboardListener.start()
 
         if self.captureMouse:
             self.mouseListener = pynput.mouse.Listener(
-                on_move=self.handle_move_event,
-                on_click=self.handle_click_event)
+                on_move=self.process_move_event,
+                on_click=self.process_click_event)
             self.mouseListener.start()
 
-        # if self.captureController:
-        #     self.gamepadThread = XInput.GamepadThread(self) # FIX THIS ASAP
-        #     self.gamepadThread.start()
+        if self.captureController:
+            self.gamepadThread = XInput.GamepadThread(self)
 
-    def handle_key_press(self, key):
-        delay = time.time() - self.lastKeyTime
-        self.lastKeyTime = time.time()
-        eventData = torch.tensor([[1, self.inputMap[key], delay]])
-        self.keyboardTensor = torch.cat((self.keyboardTensor, eventData), dim=0)
-
-    def handle_key_release(self, key):
-        delay = time.time() - self.lastKeyTime
-        self.lastKeyTime = time.time()
-        eventData = torch.tensor([[0, self.inputMap[key], delay]])
-        self.keyboardTensor = torch.cat((self.keyboardTensor, eventData), dim=0)
-
-    def handle_move_event(self, x, y):
+# moveTensor
+    def process_move_event(self, x, y):
         delay = time.time() - self.lastMoveTime
         self.lastMoveTime = time.time()
         eventData = torch.tensor([[x, y, delay]])
-        self.mouseMoveTensor = torch.cat((self.mouseMoveTensor, eventData), dim=0)
+        self.moveTensor = torch.cat((self.moveTensor, eventData), dim=0)
 
-    def handle_click_event(self, x, y, button, pressed):
-        delay = time.time() - self.lastClickTime
-        self.lastClickTime = time.time()
-        eventData = torch.tensor([[pressed, x, y, self.inputMap[button], delay]])
-        self.mouseClickTensor = torch.cat((self.mouseClickTensor, eventData), dim=0)
+# stickTensor
+    def process_stick_event(self, event):
+        delay = time.time() - self.lastStickTime
+        self.lastStickTime = time.time()
+        eventData = torch.tensor([[event.stick, event.x, event.y, delay]])
+        self.stickTensor = torch.cat((self.stickTensor, eventData), dim=0)
 
-    # def process_stick_event(self, event):
-    #     delay = time.time() - self.lastStickTime
-    #     self.lastStickTime = time.time()
-    #     eventData = torch.tensor([[event.user_index, event.stick, event.x, event.y, delay]])
-    #     self.joystickTensor = torch.cat((self.joystickTensor, eventData), dim=0)
+# triggerTensor
+    def process_trigger_event(self, event):
+        delay = time.time() - self.lastTriggerTime
+        self.lastTriggerTime = time.time()
+        eventData = torch.tensor([[event.trigger, event.value, delay]])
+        self.triggerTensor = torch.cat((self.triggerTensor, eventData), dim=0)
 
-    # def process_button_event(self, event):
-    #     delay = time.time() - self.lastButtonTime
-    #     self.lastButtonTime = time.time()
-    #     eventData = torch.tensor([[event.type, event.user_index, event.button, delay]])
-    #     self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+# buttonTensor
+    def process_key_press(self, key):
+        delay = time.time() - self.lastButtonTime
+        self.lastButtonTime = time.time()
+        eventData = torch.tensor([[0, 1, self.buttonMap[key], delay]])
+        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+        
+    def process_key_release(self, key):
+        delay = time.time() - self.lastButtonTime
+        self.lastButtonTime = time.time()
+        eventData = torch.tensor([[0, 0, self.buttonMap[key], delay]])
+        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
 
-    # def process_trigger_event(self, event):
-    #     delay = time.time() - self.lastTriggerTime
-    #     self.lastTriggerTime = time.time()
-    #     eventData = torch.tensor([[event.type, event.user_index, event.trigger, delay]])
-    #     self.triggerTensor = torch.cat((self.triggerTensor, eventData), dim=0)
+    def process_click_event(self, x, y, button, isPressed):
+        delay = time.time() - self.lastButtonTime
+        self.lastButtonTime = time.time()
+        eventData = torch.tensor([[1, isPressed, self.buttonMap[button], delay]])
+        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+
+    def process_button_event(self, event):
+        delay = time.time() - self.lastButtonTime
+        self.lastButtonTime = time.time()
+        if event.type == 3:
+            isPressed = 1
+        elif event.type == 4:
+            isPressed = 2
+        eventData = torch.tensor([[2, isPressed, self.buttonMap[event.button], delay]])
+        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
 
     def save_to_file(self):
-        torch.save(self.keyboardTensor, "data/keyboard.pt")
-        torch.save(self.mouseMoveTensor, "data/mousemove.pt")
-        torch.save(self.mouseClickTensor, "data/mouseclick.pt")
-        torch.save(self.joystickTensor, "data/joystick.pt")
-        torch.save(self.buttonTensor, "data/button.pt")
-        torch.save(self.triggerTensor, "data/trigger.pt")
+        torch.save(self.buttonTensor, "pythonapp/data/button.pt")
+        torch.save(self.moveTensor, "pythonapp/data/move.pt")
+        torch.save(self.stickTensor, "pythonapp/data/stick.pt")
+        torch.save(self.triggerTensor, "pythonapp/data/trigger.pt")

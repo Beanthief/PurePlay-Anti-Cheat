@@ -20,19 +20,20 @@ class LSTM(torch.nn.Module):
 
     def train(self, xTrain, yTrain, epochs, learningRate):
         optimizer = torch.optim.Adam(self.parameters(), lr=learningRate)
+        loss_function = torch.nn.BCEWithLogitsLoss()
         for epoch in range(epochs):
             self.train()
             optimizer.zero_grad()
             prediction = self(xTrain)
-            loss = torch.nn.BCEWithLogitsLoss(prediction, yTrain)
+            loss = loss_function(prediction, yTrain)
             loss.backward()
             optimizer.step()
             if (epoch + 1) % 5 == 0:
                 print(f"Epoch [{(epoch + 1) / epochs}], Loss: {loss.item():.4f}")
         print("Training Finished")
 
-class Transformer(torch.nn.Module):
-    def __init__(self, ):
-        super(Transformer, self).__init__()
+# class Transformer(torch.nn.Module):
+#     def __init__(self, ):
+#         super(Transformer, self).__init__()
 
-    def forward(self, ):
+#     def forward(self, ):
