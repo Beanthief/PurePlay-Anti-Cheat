@@ -11,12 +11,6 @@ class InputListener(XInput.EventHandler):
         self.captureMouse = captureMouse
         self.captureController = captureController
 
-        connectedControllers = XInput.get_connected()
-        if any(connectedControllers) and captureController:
-            super().__init__() # Pass connected controllers
-        else:
-            self.captureController = False
-
         self.startTime = time.time()
         self.lastButtonTime = self.startTime
         self.lastMoveTime = self.startTime
@@ -258,7 +252,7 @@ class InputListener(XInput.EventHandler):
         eventData = torch.tensor([[2, isPressed, self.buttonMap[event.button], delay]])
         self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
 
-    def save_to_file(self):
+    def save_to_files(self):
         torch.save(self.buttonTensor, "pythonapp/data/button.pt")
         torch.save(self.moveTensor, "pythonapp/data/move.pt")
         torch.save(self.stickTensor, "pythonapp/data/stick.pt")
