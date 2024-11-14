@@ -201,6 +201,18 @@ class InputListener(XInput.EventHandler):
 
         if self.captureController:
             self.gamepadThread = XInput.GamepadThread(self)
+        
+    def stop(self):
+        if self.captureKeyboard:
+            self.keyboardListener.stop()
+        if self.captureMouse:
+            self.mouseListener.stop()
+
+    def save_to_files(self):
+        torch.save(self.buttonTensor, "pythonapp/data/button.pt")
+        torch.save(self.moveTensor, "pythonapp/data/move.pt")
+        torch.save(self.stickTensor, "pythonapp/data/stick.pt")
+        torch.save(self.triggerTensor, "pythonapp/data/trigger.pt")
 
 # moveTensor
     def process_move_event(self, x, y):
@@ -252,8 +264,4 @@ class InputListener(XInput.EventHandler):
         eventData = torch.tensor([[2, isPressed, self.buttonMap[event.button], delay]])
         self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
 
-    def save_to_files(self):
-        torch.save(self.buttonTensor, "pythonapp/data/button.pt")
-        torch.save(self.moveTensor, "pythonapp/data/move.pt")
-        torch.save(self.stickTensor, "pythonapp/data/stick.pt")
-        torch.save(self.triggerTensor, "pythonapp/data/trigger.pt")
+    
