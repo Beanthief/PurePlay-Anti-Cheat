@@ -6,10 +6,11 @@ import torch
 import time
 
 class InputListener(XInput.EventHandler):
-    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True):
+    def __init__(self, dataTag, programMode=2, captureKeyboard=True, captureMouse=True, captureController=True,):
         self.captureKeyboard = captureKeyboard
         self.captureMouse = captureMouse
         self.captureController = captureController
+        self.programMode = programMode
 
         self.startTime = time.time()
         self.lastButtonTime = self.startTime
@@ -208,11 +209,11 @@ class InputListener(XInput.EventHandler):
         if self.captureMouse:
             self.mouseListener.stop()
 
-    def save_to_files(self):
-        torch.save(self.buttonTensor, "pythonapp/data/button.pt")
-        torch.save(self.moveTensor, "pythonapp/data/move.pt")
-        torch.save(self.stickTensor, "pythonapp/data/stick.pt")
-        torch.save(self.triggerTensor, "pythonapp/data/trigger.pt")
+    def save_to_files(self, tag):
+        torch.save(self.buttonTensor, f"pythonapp/data/button{tag}.pt")
+        torch.save(self.moveTensor, f"pythonapp/data/move{tag}.pt")
+        torch.save(self.stickTensor, f"pythonapp/data/stick{tag}.pt")
+        torch.save(self.triggerTensor, f"pythonapp/data/trigger{tag}.pt")
 
 # moveTensor
     def process_move_event(self, x, y):
