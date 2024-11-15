@@ -1,5 +1,4 @@
 import torch
-import matplotlib.pyplot as plot
 
 class LSTMClassifier(torch.nn.Module):
     def __init__(self, inputSize, hiddenSize, classCount, layerCount, device):
