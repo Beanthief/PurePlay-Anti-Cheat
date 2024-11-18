@@ -1,16 +1,17 @@
-import pynput
 from pynput.keyboard import Key, KeyCode
 from pynput.mouse import Button
+import pynput
 import XInput
-import torch
+import numpy
 import time
+import os
+
 
 class InputListener(XInput.EventHandler):
-    def __init__(self, dataTag, programMode=2, captureKeyboard=True, captureMouse=True, captureController=True,):
+    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True):
         self.captureKeyboard = captureKeyboard
         self.captureMouse = captureMouse
         self.captureController = captureController
-        self.programMode = programMode
 
         self.startTime = time.time()
         self.lastButtonTime = self.startTime
@@ -18,10 +19,11 @@ class InputListener(XInput.EventHandler):
         self.lastStickTime = self.startTime
         self.lastTriggerTime = self.startTime
 
-        self.moveTensor = torch.empty((0, 3))    #[x, y, delay]
-        self.stickTensor = torch.empty((0, 4))   #[stickID, x, y, delay]
-        self.triggerTensor = torch.empty((0, 3)) #[triggerID, value, delay]
-        self.buttonTensor = torch.empty((0, 4))  #[deviceType, isPressed, buttonID, delay]
+        self.buttonData = []  # List for [deviceType, isPressed, buttonID, delay]
+        self.moveData = []    # List for [x, y, delay]
+        self.stickData = []   # List for [stickID, x, y, delay]
+        self.triggerData = [] # List for [triggerID, value, delay]
+
         self.buttonMap = {
             Key.alt: 1,
             Key.alt_gr: 2,
@@ -186,7 +188,7 @@ class InputListener(XInput.EventHandler):
             "X": 163,
             "Y": 164
         }
-
+    
     def start(self):
         if self.captureKeyboard:
             self.keyboardListener = pynput.keyboard.Listener(
@@ -202,58 +204,36 @@ class InputListener(XInput.EventHandler):
 
         if self.captureController:
             self.gamepadThread = XInput.GamepadThread(self)
-        
+
     def stop(self):
         if self.captureKeyboard:
             self.keyboardListener.stop()
         if self.captureMouse:
             self.mouseListener.stop()
 
-    def save_to_files(self, tag):
-        torch.save(self.buttonTensor, f"pythonapp/data/button{tag}.pt")
-        torch.save(self.moveTensor, f"pythonapp/data/move{tag}.pt")
-        torch.save(self.stickTensor, f"pythonapp/data/stick{tag}.pt")
-        torch.save(self.triggerTensor, f"pythonapp/data/trigger{tag}.pt")
+    def save_to_files(self, directory, label):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        numpy.savetxt(f"{directory}/button{label}.csv", numpy.array(self.buttonData), delimiter=",")
+        numpy.savetxt(f"{directory}/move{label}.csv", numpy.array(self.moveData), delimiter=",")
+        numpy.savetxt(f"{directory}/stick{label}.csv", numpy.array(self.stickData), delimiter=",")
+        numpy.savetxt(f"{directory}/trigger{label}.csv", numpy.array(self.triggerData), delimiter=",")
 
-# moveTensor
-    def process_move_event(self, x, y):
-        delay = time.time() - self.lastMoveTime
-        self.lastMoveTime = time.time()
-        eventData = torch.tensor([[x, y, delay]])
-        self.moveTensor = torch.cat((self.moveTensor, eventData), dim=0)
-
-# stickTensor
-    def process_stick_event(self, event):
-        delay = time.time() - self.lastStickTime
-        self.lastStickTime = time.time()
-        eventData = torch.tensor([[event.stick, event.x, event.y, delay]])
-        self.stickTensor = torch.cat((self.stickTensor, eventData), dim=0)
-
-# triggerTensor
-    def process_trigger_event(self, event):
-        delay = time.time() - self.lastTriggerTime
-        self.lastTriggerTime = time.time()
-        eventData = torch.tensor([[event.trigger, event.value, delay]])
-        self.triggerTensor = torch.cat((self.triggerTensor, eventData), dim=0)
-
-# buttonTensor
+    # Button press and release data
     def process_key_press(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        eventData = torch.tensor([[0, 1, self.buttonMap[key], delay]])
-        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+        self.buttonData.append([0, 1, self.buttonMap[key], delay])
         
     def process_key_release(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        eventData = torch.tensor([[0, 0, self.buttonMap[key], delay]])
-        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+        self.buttonData.append([0, 0, self.buttonMap[key], delay])
 
     def process_click_event(self, x, y, button, isPressed):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        eventData = torch.tensor([[1, isPressed, self.buttonMap[button], delay]])
-        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+        self.buttonData.append([1, isPressed, self.buttonMap[button], delay])
 
     def process_button_event(self, event):
         delay = time.time() - self.lastButtonTime
@@ -261,8 +241,23 @@ class InputListener(XInput.EventHandler):
         if event.type == 3:
             isPressed = 1
         elif event.type == 4:
-            isPressed = 2
-        eventData = torch.tensor([[2, isPressed, self.buttonMap[event.button], delay]])
-        self.buttonTensor = torch.cat((self.buttonTensor, eventData), dim=0)
+            isPressed = 0
+        self.buttonData.append([2, isPressed, self.buttonMap[event.button], delay])
 
-    
+    # Move data
+    def process_move_event(self, x, y):
+        delay = time.time() - self.lastMoveTime
+        self.lastMoveTime = time.time()
+        self.moveData.append([x, y, delay])
+
+    # Stick data
+    def process_stick_event(self, event):
+        delay = time.time() - self.lastStickTime
+        self.lastStickTime = time.time()
+        self.stickData.append([event.stick, event.x, event.y, delay])
+
+    # Trigger data
+    def process_trigger_event(self, event):
+        delay = time.time() - self.lastTriggerTime
+        self.lastTriggerTime = time.time()
+        self.triggerData.append([event.trigger, event.value, delay])
