@@ -8,10 +8,12 @@ import os
 
 
 class InputListener(XInput.EventHandler):
-    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True):
+    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True, *controllers):
         self.captureKeyboard = captureKeyboard
         self.captureMouse = captureMouse
         self.captureController = captureController
+        
+        if self.captureController: super().__init__(*controllers)
 
         self.startTime = time.time()
         self.lastButtonTime = self.startTime
@@ -261,3 +263,6 @@ class InputListener(XInput.EventHandler):
         delay = time.time() - self.lastTriggerTime
         self.lastTriggerTime = time.time()
         self.triggerData.append([event.trigger, event.value, delay])
+
+    def process_connection_event(self, event):
+        print("Controller Detected")

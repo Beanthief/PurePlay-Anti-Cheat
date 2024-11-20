@@ -4,6 +4,7 @@ import listener
 import keyboard
 import models
 import pandas
+import XInput
 import torch
 import time
 import os
@@ -24,7 +25,7 @@ displayGraph = int(config["Analysis"]["displayGraph"])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController)
+inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController, (0))
 inputListener.start()
 
 def convert_to_tensor(list, shape): # Use during analysis
@@ -66,9 +67,9 @@ match programMode:
                                                 device=device).to(device)
 
         buttonTensor = torch.empty((0, 4))  # Button input (4 features)
-        moveTensor = torch.empty((0, 3))  # Mouse movement (3 features)
-        stickTensor = torch.empty((0, 4))  # Stick input (4 features)
-        triggerTensor = torch.empty((0, 3))  # Trigger input (3 features)
+        moveTensor = torch.empty((0, 3))    # Mouse movement (3 features)
+        stickTensor = torch.empty((0, 4))   # Stick input (4 features)
+        triggerTensor = torch.empty((0, 3)) # Trigger input (3 features)
 
         for fileName in os.listdir(dataDirectory):
             filePath = os.path.join(dataDirectory, fileName)
@@ -139,5 +140,6 @@ match programMode:
                     inputListener.triggerData = []
             print(confidence)
             # Display graph?
+            # Encrypt output?
 
 inputListener.stop()
