@@ -4,7 +4,6 @@ import listener
 import keyboard
 import models
 import pandas
-import XInput
 import torch
 import time
 import os

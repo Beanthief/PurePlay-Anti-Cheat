@@ -6,7 +6,6 @@ import numpy
 import time
 import os
 
-
 class InputListener(XInput.EventHandler):
     def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True, *controllers):
         self.captureKeyboard = captureKeyboard
