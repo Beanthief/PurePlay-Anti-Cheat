@@ -35,14 +35,14 @@ match programMode:
     ########## Data Collection ##########
     case 0:
         while True:
-            time.sleep(10)
+            time.sleep(20)
             if keyboard.is_pressed(killKey):
                 while keyboard.is_pressed(killKey):
                     time.sleep(0.5)
                 inputListener.buttonData = inputListener.buttonData[:-2] # Strip kill key from data
                 inputListener.save_to_files(dataDirectory, dataLabel)
                 break
-            inputListener.save_to_files(dataDirectory, dataLabel)
+            else: inputListener.save_to_files(dataDirectory, dataLabel)
 
     ########## Model Training ##########
     case 1:

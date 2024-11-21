@@ -4,6 +4,7 @@ import pynput
 import XInput
 import numpy
 import time
+import csv
 import os
 
 class InputListener(XInput.EventHandler):
@@ -20,10 +21,10 @@ class InputListener(XInput.EventHandler):
         self.lastStickTime = self.startTime
         self.lastTriggerTime = self.startTime
 
-        self.buttonData = numpy.empty((0, 4), dtype=object)  # Array for [deviceType, isPressed, buttonID, delay]
-        self.moveData = numpy.empty((0, 3), dtype=float)     # Array for [x, y, delay]
-        self.stickData = numpy.empty((0, 4), dtype=float)    # Array for [stickID, x, y, delay]
-        self.triggerData = numpy.empty((0, 3), dtype=float)  # Array for [triggerID, value, delay]
+        self.buttonData = []  # List for [deviceType, isPressed, buttonID, delay]
+        self.moveData = []    # List for [x, y, delay]
+        self.stickData = []   # List for [stickID, x, y, delay]
+        self.triggerData = [] # List for [triggerID, value, delay]
 
         self.buttonMap = {
             Key.alt: 1,
@@ -215,35 +216,39 @@ class InputListener(XInput.EventHandler):
     def save_to_files(self, directory, label):
         if not os.path.exists(directory):
             os.makedirs(directory)
+        with open(f'{directory}/button{label}.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.buttonData)
+        with open(f'{directory}/move{label}.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.moveData)
+        with open(f'{directory}/stick{label}.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.stickData)
+        with open(f'{directory}/trigger{label}.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.triggerData)
         
-        numpy.savetxt(f"{directory}/button{label}.csv", self.buttonData, delimiter=",", fmt='%.2f', header='', comments='', mode='a')
-        numpy.savetxt(f"{directory}/move{label}.csv", self.moveData, delimiter=",", fmt='%.2f', header='', comments='', mode='a')
-        numpy.savetxt(f"{directory}/stick{label}.csv", self.stickData, delimiter=",", fmt='%.2f', header='', comments='', mode='a')
-        numpy.savetxt(f"{directory}/trigger{label}.csv", self.triggerData, delimiter=",", fmt='%.2f', header='', comments='', mode='a')
-
-        self.buttonData = numpy.empty((0, 4), dtype=object)
-        self.moveData = numpy.empty((0, 3), dtype=float)
-        self.stickData = numpy.empty((0, 4), dtype=float)
-        self.triggerData = numpy.empty((0, 3), dtype=float)
+        self.buttonData.clear()
+        self.moveData.clear()
+        self.stickData.clear()
+        self.triggerData.clear()
 
     # Button press and release data
     def process_key_press(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        newRow = numpy.array([[0, 1, self.buttonMap[key], delay]], dtype=object)
-        self.buttonData = numpy.vstack((self.buttonData, newRow))
+        self.buttonData.append([0, 1, self.buttonMap[key], delay])
         
     def process_key_release(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        newRow = numpy.array([[0, 0, self.buttonMap[key], delay]], dtype=object)
-        self.buttonData = numpy.vstack((self.buttonData, newRow))
+        self.buttonData.append([0, 0, self.buttonMap[key], delay])
 
     def process_click_event(self, x, y, button, isPressed):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        newRow = numpy.array([[1, isPressed, self.buttonMap[button], delay]], dtype=object)
-        self.buttonData = numpy.vstack((self.buttonData, newRow))
+        self.buttonData.append([1, isPressed, self.buttonMap[button], delay])
 
     def process_button_event(self, event):
         delay = time.time() - self.lastButtonTime
@@ -252,29 +257,25 @@ class InputListener(XInput.EventHandler):
             isPressed = 1
         elif event.type == 4:
             isPressed = 0
-        newRow = numpy.array([[2, isPressed, self.buttonMap[event.button], delay]], dtype=object)
-        self.buttonData = numpy.vstack((self.buttonData, newRow))
+        self.buttonData.append([2, isPressed, self.buttonMap[event.button], delay])
 
     # Move data
     def process_move_event(self, x, y):
         delay = time.time() - self.lastMoveTime
         self.lastMoveTime = time.time()
-        newRow = numpy.array([[x, y, delay]], dtype=object)
-        self.moveData = numpy.vstack((self.moveData, newRow))
+        self.moveData.append([x, y, delay])
 
     # Stick data
     def process_stick_event(self, event):
         delay = time.time() - self.lastStickTime
         self.lastStickTime = time.time()
-        newRow = numpy.array([[event.stick, event.x, event.y, delay]], dtype=object)
-        self.stickData = numpy.vstack((self.stickData, newRow))
+        self.stickData.append([event.stick, event.x, event.y, delay])
 
     # Trigger data
     def process_trigger_event(self, event):
         delay = time.time() - self.lastTriggerTime
         self.lastTriggerTime = time.time()
-        newRow = numpy.array([[event.trigger, event.value, delay]], dtype=object)
-        self.triggerData = numpy.vstack((self.triggerData, newRow))
+        self.triggerData.append([event.trigger, event.value, delay])
 
     def process_connection_event(self, event):
         print("Controller Detected")
