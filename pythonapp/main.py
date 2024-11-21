@@ -13,7 +13,7 @@ config.read("config.ini")
 programMode = int(config["General"]["programMode"])                   # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
 captureKeyboard = int(config["Collection"]["captureKeyboard"])
 captureMouse = int(config["Collection"]["captureMouse"])
-captureController = int(config["Collection"]["captureController"])
+captureController = int(config["Collection"]["captureController"])    # DO NOT ENABLE AT SAME TIME AS KB OR MOUSE
 dataDirectory = config["Collection"]["dataDirectory"]
 dataLabel = config["Collection"]["dataLabel"]                         # control, cheat
 killKey = config["Collection"]["killKey"]

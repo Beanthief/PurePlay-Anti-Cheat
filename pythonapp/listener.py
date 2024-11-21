@@ -2,7 +2,6 @@ from pynput.keyboard import Key, KeyCode
 from pynput.mouse import Button
 import pynput
 import XInput
-import numpy
 import time
 import csv
 import os
