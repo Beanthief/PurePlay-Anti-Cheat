@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pynput.keyboard import Key, KeyCode
 from pynput.mouse import Button
 import pynput
@@ -24,6 +25,8 @@ class InputListener(XInput.EventHandler):
         self.moveData = []    # List for [x, y, delay]
         self.stickData = []   # List for [stickID, x, y, delay]
         self.triggerData = [] # List for [triggerID, value, delay]
+
+        self.executor = ThreadPoolExecutor(max_workers=10)
 
         self.buttonMap = {
             Key.alt: 1,
@@ -193,14 +196,14 @@ class InputListener(XInput.EventHandler):
     def start(self):
         if self.captureKeyboard:
             self.keyboardListener = pynput.keyboard.Listener(
-                on_press=self.process_key_press,
-                on_release=self.process_key_release)
+                on_press=self.enqueue_key_press,
+                on_release=self.enqueue_key_release)
             self.keyboardListener.start()
 
         if self.captureMouse:
             self.mouseListener = pynput.mouse.Listener(
-                on_move=self.process_move_event,
-                on_click=self.process_click_event)
+                on_move=self.enqueue_move_event,
+                on_click=self.enqueue_click_event)
             self.mouseListener.start()
 
         if self.captureController:
@@ -211,6 +214,7 @@ class InputListener(XInput.EventHandler):
             self.keyboardListener.stop()
         if self.captureMouse:
             self.mouseListener.stop()
+        self.executor.shutdown(wait=True)
 
     def save_to_files(self, directory, label):
         if not os.path.exists(directory):
@@ -232,49 +236,51 @@ class InputListener(XInput.EventHandler):
         self.moveData.clear()
         self.stickData.clear()
         self.triggerData.clear()
+    
+    def enqueue_key_press(self, key):
+        self.executor.submit(self.handle_key_press, key)
+    def enqueue_key_release(self, key):
+        self.executor.submit(self.handle_key_release, key)
+    def enqueue_click_event(self, x, y, button, isPressed):
+        self.executor.submit(self.handle_click_event, x, y, button, isPressed)
+    def enqueue_button_event(self, event):
+        self.executor.submit(self.handle_button_event, event)
+    def enqueue_move_event(self, x, y):
+        self.executor.submit(self.handle_move_event, x, y)
+    def enqueue_stick_event(self, event):
+        self.executor.submit(self.handle_stick_event, event)
+    def enqueue_trigger_event(self, event):
+        self.executor.submit(self.handle_trigger_event, event)
 
-    # Button press and release data
-    def process_key_press(self, key):
+    # Handlers for the specific events
+    def handle_key_press(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
         self.buttonData.append([0, 1, self.buttonMap[key], delay])
-        
-    def process_key_release(self, key):
+    def handle_key_release(self, key):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
         self.buttonData.append([0, 0, self.buttonMap[key], delay])
-
-    def process_click_event(self, x, y, button, isPressed):
+    def handle_click_event(self, x, y, button, isPressed): # coords excluded
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
         self.buttonData.append([1, isPressed, self.buttonMap[button], delay])
-
-    def process_button_event(self, event):
+    def handle_button_event(self, event):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
-        if event.type == 3:
-            isPressed = 1
-        elif event.type == 4:
-            isPressed = 0
+        isPressed = 1 if event.type == 3 else 0
         self.buttonData.append([2, isPressed, self.buttonMap[event.button], delay])
-
-    # Move data
-    def process_move_event(self, x, y):
+    def handle_move_event(self, x, y):
         delay = time.time() - self.lastMoveTime
         self.lastMoveTime = time.time()
         self.moveData.append([x, y, delay])
-
-    # Stick data
-    def process_stick_event(self, event):
+    def handle_stick_event(self, event):
         delay = time.time() - self.lastStickTime
         self.lastStickTime = time.time()
         self.stickData.append([event.stick, event.x, event.y, delay])
-
-    # Trigger data
-    def process_trigger_event(self, event):
+    def handle_trigger_event(self, event):
         delay = time.time() - self.lastTriggerTime
         self.lastTriggerTime = time.time()
         self.triggerData.append([event.trigger, event.value, delay])
-
-    def process_connection_event(self, event):
+    def handle_connection_event(self, event):
         print("Controller Detected")

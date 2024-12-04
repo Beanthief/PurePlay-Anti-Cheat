@@ -16,10 +16,11 @@ captureMouse = int(config["Collection"]["captureMouse"])
 captureController = int(config["Collection"]["captureController"])    # DO NOT ENABLE AT SAME TIME AS KB OR MOUSE
 dataDirectory = config["Collection"]["dataDirectory"]
 dataLabel = config["Collection"]["dataLabel"]                         # control, cheat
+saveInterval = int(config["Collection"]["saveInterval"])              # Time between file saves
 killKey = config["Collection"]["killKey"]
 dataType = config["Training"]["dataType"]
 modelDirectory = config["Training"]["modelDirectory"]
-pollInterval = int(config["Analysis"]["pollInterval"])                # Time between batch predictions (window size)
+windowSize = int(config["Analysis"]["windowSize"])                    # Time between batch predictions
 displayGraph = int(config["Analysis"]["displayGraph"])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,11 +36,11 @@ match programMode:
     ########## Data Collection ##########
     case 0:
         while True:
-            time.sleep(20)
+            time.sleep(saveInterval)
             if keyboard.is_pressed(killKey):
                 while keyboard.is_pressed(killKey):
-                    time.sleep(0.5)
-                inputListener.buttonData = inputListener.buttonData[:-2] # Strip kill key from data
+                    time.sleep(0.1)
+                inputListener.buttonData = inputListener.buttonData[:-2] # IMPROVE STRIP METHOD
                 inputListener.save_to_files(dataDirectory, dataLabel)
                 break
             else: inputListener.save_to_files(dataDirectory, dataLabel)
@@ -122,7 +123,7 @@ match programMode:
             stickLSTM = torch.load(f"{modelDirectory}/stickLSTM.pt")
             triggerLSTM = torch.load(f"{modelDirectory}/triggerLSTM.pt")
         while True: # Or while game is running?
-            time.sleep(pollInterval)
+            time.sleep(windowSize)
             confidence = 1
             with torch.inference_mode():
                 output = buttonLSTM(scaler.fit_transform(inputListener.buttonData))
