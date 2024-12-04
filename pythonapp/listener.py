@@ -219,16 +219,16 @@ class InputListener(XInput.EventHandler):
     def save_to_files(self, directory, label):
         if not os.path.exists(directory):
             os.makedirs(directory)
-        with open(f'{directory}/button{label}.csv', 'w', newline='') as file:
+        with open(f'{directory}/button{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.buttonData)
-        with open(f'{directory}/move{label}.csv', 'w', newline='') as file:
+        with open(f'{directory}/move{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.moveData)
-        with open(f'{directory}/stick{label}.csv', 'w', newline='') as file:
+        with open(f'{directory}/stick{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.stickData)
-        with open(f'{directory}/trigger{label}.csv', 'w', newline='') as file:
+        with open(f'{directory}/trigger{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.triggerData)
         
