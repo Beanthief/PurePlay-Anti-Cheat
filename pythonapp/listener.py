@@ -196,14 +196,14 @@ class InputListener(XInput.EventHandler):
     def start(self):
         if self.captureKeyboard:
             self.keyboardListener = pynput.keyboard.Listener(
-                on_press=self.enqueue_key_press,
-                on_release=self.enqueue_key_release)
+                on_press=self.process_key_press,
+                on_release=self.process_key_release)
             self.keyboardListener.start()
 
         if self.captureMouse:
             self.mouseListener = pynput.mouse.Listener(
-                on_move=self.enqueue_move_event,
-                on_click=self.enqueue_click_event)
+                on_move=self.process_move_event,
+                on_click=self.process_click_event)
             self.mouseListener.start()
 
         if self.captureController:
@@ -237,19 +237,19 @@ class InputListener(XInput.EventHandler):
         self.stickData.clear()
         self.triggerData.clear()
     
-    def enqueue_key_press(self, key):
+    def process_key_press(self, key):
         self.executor.submit(self.handle_key_press, key)
-    def enqueue_key_release(self, key):
+    def process_key_release(self, key):
         self.executor.submit(self.handle_key_release, key)
-    def enqueue_click_event(self, x, y, button, isPressed):
+    def process_click_event(self, x, y, button, isPressed):
         self.executor.submit(self.handle_click_event, x, y, button, isPressed)
-    def enqueue_button_event(self, event):
+    def process_button_event(self, event):
         self.executor.submit(self.handle_button_event, event)
-    def enqueue_move_event(self, x, y):
+    def process_move_event(self, x, y):
         self.executor.submit(self.handle_move_event, x, y)
-    def enqueue_stick_event(self, event):
+    def process_stick_event(self, event):
         self.executor.submit(self.handle_stick_event, event)
-    def enqueue_trigger_event(self, event):
+    def process_trigger_event(self, event):
         self.executor.submit(self.handle_trigger_event, event)
 
     # Handlers for the specific events
