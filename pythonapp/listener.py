@@ -282,5 +282,6 @@ class InputListener(XInput.EventHandler):
         delay = time.time() - self.lastTriggerTime
         self.lastTriggerTime = time.time()
         self.triggerData.append([event.trigger, event.value, delay])
-    def handle_connection_event(self, event):
+    
+    def process_connection_event(self, event):
         print("Controller Detected")

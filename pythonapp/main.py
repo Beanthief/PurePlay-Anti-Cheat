@@ -8,6 +8,7 @@ import torch
 import time
 import os
 
+
 config = configparser.ConfigParser()
 config.read("config.ini")
 programMode = int(config["General"]["programMode"])                   # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
@@ -37,7 +38,7 @@ match programMode:
     case 0:
         while True:
             time.sleep(saveInterval)
-            if keyboard.is_pressed(killKey):
+            if keyboard.is_pressed(killKey): # Make asynchronous?
                 while keyboard.is_pressed(killKey):
                     time.sleep(0.1)
                 inputListener.buttonData = inputListener.buttonData[:-2] # IMPROVE STRIP METHOD
