@@ -8,23 +8,20 @@ import torch
 import time
 import os
 
-
 config = configparser.ConfigParser()
-config.read("config.ini")
-programMode = int(config["General"]["programMode"])                   # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
-captureKeyboard = int(config["Collection"]["captureKeyboard"])
-captureMouse = int(config["Collection"]["captureMouse"])
-captureController = int(config["Collection"]["captureController"])    # DO NOT ENABLE AT SAME TIME AS KB OR MOUSE
-dataDirectory = config["Collection"]["dataDirectory"]
-dataLabel = config["Collection"]["dataLabel"]                         # control, cheat
-saveInterval = int(config["Collection"]["saveInterval"])              # Time between file saves
-killKey = config["Collection"]["killKey"]
-dataType = config["Training"]["dataType"]
-modelDirectory = config["Training"]["modelDirectory"]
-windowSize = int(config["Analysis"]["windowSize"])                    # Time between batch predictions
-displayGraph = int(config["Analysis"]["displayGraph"])
+config.read('config.ini')
+programMode = int(config['General']['programMode'])                   # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
+captureKeyboard = int(config['Collection']['captureKeyboard'])
+captureMouse = int(config['Collection']['captureMouse'])
+captureController = int(config['Collection']['captureController'])    # DO NOT ENABLE AT SAME TIME AS KB OR MOUSE
+dataLabel = config['Collection']['dataLabel']                         # control, cheat
+saveInterval = int(config['Collection']['saveInterval'])              # Time between file saves
+killKey = config['Collection']['killKey']
+dataType = config['Training']['dataType']
+windowSize = int(config['Analysis']['windowSize'])                    # Time between batch predictions
+displayGraph = int(config['Analysis']['displayGraph'])
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController, (0))
 inputListener.start()
@@ -42,9 +39,9 @@ match programMode:
                 while keyboard.is_pressed(killKey):
                     time.sleep(0.1)
                 inputListener.buttonData = inputListener.buttonData[:-2] # IMPROVE STRIP METHOD
-                inputListener.save_to_files(dataDirectory, dataLabel)
+                inputListener.save_to_files(dataLabel)
                 break
-            else: inputListener.save_to_files(dataDirectory, dataLabel)
+            else: inputListener.save_to_files(dataLabel)
 
     ########## Model Training ##########
     case 1:
@@ -76,53 +73,53 @@ match programMode:
         stickTensor = torch.empty((0, 4))   # Stick input (4 features)
         triggerTensor = torch.empty((0, 3)) # Trigger input (3 features)
 
-        for fileName in os.listdir(dataDirectory):
-            filePath = os.path.join(dataDirectory, fileName)
-            if os.path.isfile(filePath) and fileName.endswith(".csv"):
+        for fileName in os.listdir("data"):
+            filePath = os.path.join("data", fileName)
+            if os.path.isfile(filePath) and fileName.endswith('.csv'):
                 dataFrame = pandas.read_csv(filePath)
                 tensor = torch.tensor(dataFrame.values, dtype=dataType)
                 
-                if "cheat" in fileName: # Decide on how to pass yTrain
-                    if "button" in fileName:
+                if 'cheat' in fileName: # Decide on how to pass yTrain
+                    if 'button' in fileName:
                         bTensor = torch.cat((buttonTensor, tensor), dim=0)
-                    elif "move" in fileName:
+                    elif 'move' in fileName:
                         mTensor = torch.cat((moveTensor, tensor), dim=0)
-                    elif "stick" in fileName:
+                    elif 'stick' in fileName:
                         sTensor = torch.cat((stickTensor, tensor), dim=0)
-                    elif "trigger" in fileName:
+                    elif 'trigger' in fileName:
                         tTensor = torch.cat((triggerTensor, tensor), dim=0)
-                elif "control" in fileName:
-                    if "button" in fileName:
+                elif 'control' in fileName:
+                    if 'button' in fileName:
                         bTensor = torch.cat((buttonTensor, tensor), dim=0)
-                    elif "move" in fileName:
+                    elif 'move' in fileName:
                         mTensor = torch.cat((moveTensor, tensor), dim=0)
-                    elif "stick" in fileName:
+                    elif 'stick' in fileName:
                         sTensor = torch.cat((stickTensor, tensor), dim=0)
-                    elif "trigger" in fileName:
+                    elif 'trigger' in fileName:
                         tTensor = torch.cat((triggerTensor, tensor), dim=0)
 
         if bTensor.size(0) > 0:
             buttonLSTM.train() # Add appropriate training params
-            torch.save(buttonLSTM.state_dict(), f"{modelDirectory}/button.pt")
+            torch.save(buttonLSTM.state_dict(), 'models/button.pt')
         if mTensor.size(0) > 0:
             moveLSTM.train() # Add appropriate training params
-            torch.save(moveLSTM.state_dict(), f"{modelDirectory}/move.pt")
+            torch.save(moveLSTM.state_dict(), 'models/move.pt')
         if sTensor.size(0) > 0:
             stickLSTM.train() # Add appropriate training params
-            torch.save(stickLSTM.state_dict(), f"{modelDirectory}/stick.pt")
+            torch.save(stickLSTM.state_dict(), 'models/stick.pt')
         if tTensor.size(0) > 0:
             triggerLSTM.train() # Add appropriate training params
-            torch.save(triggerLSTM.state_dict(), f"{modelDirectory}/trigger.pt")
+            torch.save(triggerLSTM.state_dict(), 'models/trigger.pt')
 
     ########## Live Analysis ##########
     case 2: 
         scaler = StandardScaler()
-        buttonLSTM = torch.load(f"{modelDirectory}/buttonLSTM.pt")
+        buttonLSTM = torch.load('models/button.pt')
         if captureMouse:
-            moveLSTM = torch.load(f"{modelDirectory}/moveLSTM.pt")
+            moveLSTM = torch.load('models/move.pt')
         if captureController:
-            stickLSTM = torch.load(f"{modelDirectory}/stickLSTM.pt")
-            triggerLSTM = torch.load(f"{modelDirectory}/triggerLSTM.pt")
+            stickLSTM = torch.load('models/stick.pt')
+            triggerLSTM = torch.load('models/trigger.pt')
         while True: # Or while game is running?
             time.sleep(windowSize)
             confidence = 1

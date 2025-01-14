@@ -31,9 +31,21 @@ This solution is perfect for **low-budget game developers** who need a reliable 
 
 ## Getting Started
 ### Installation
-To get started with **PurePlay Anti-Cheat**, clone the repository and install the necessary dependencies.
+1. **Clone the repository**:
+   ```sh
+   git clone https://github.com/Beanthief/PurePlay-Anti-Cheat
+   cd PurePlay-Anti-Cheat
+   ```
 
-```bash
-git clone https://github.com/Beanthief/PurePlay-Anti-Cheat
-cd PurePlay-Anti-Cheat
-pip install -r requirements.txt
+2. **Run the install script**:
+   ```sh
+   ./install.bat
+   ```
+
+3. **Configure the settings**:
+   Edit the `config.ini` file to match your preferences and setup requirements.
+
+4. **Start the application**:
+   ```sh
+   ./start.bat
+   ```

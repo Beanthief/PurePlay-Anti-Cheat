@@ -177,20 +177,20 @@ class InputListener(XInput.EventHandler):
             Button.middle: 150,
 
             # Controller Buttons
-            "DPAD_UP": 151,
-            "DPAD_DOWN": 152,
-            "DPAD_LEFT": 153,
-            "DPAD_RIGHT": 154,
-            "START": 155,
-            "BACK": 156,
-            "LEFT_THUMB": 157,
-            "RIGHT_THUMB": 158,
-            "LEFT_SHOULDER": 159,
-            "RIGHT_SHOULDER": 160,
-            "A": 161,
-            "B": 162,
-            "X": 163,
-            "Y": 164
+            'DPAD_UP': 151,
+            'DPAD_DOWN': 152,
+            'DPAD_LEFT': 153,
+            'DPAD_RIGHT': 154,
+            'START': 155,
+            'BACK': 156,
+            'LEFT_THUMB': 157,
+            'RIGHT_THUMB': 158,
+            'LEFT_SHOULDER': 159,
+            'RIGHT_SHOULDER': 160,
+            'A': 161,
+            'B': 162,
+            'X': 163,
+            'Y': 164
         }
     
     def start(self):
@@ -216,22 +216,21 @@ class InputListener(XInput.EventHandler):
             self.mouseListener.stop()
         self.executor.shutdown(wait=True)
 
-    def save_to_files(self, directory, label):
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        with open(f'{directory}/button{label}.csv', 'a', newline='') as file:
+    def save_to_files(self, label):
+        if not os.path.exists('data'):
+            os.makedirs('data')
+        with open(f'data/button{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.buttonData)
-        with open(f'{directory}/move{label}.csv', 'a', newline='') as file:
+        with open(f'data/move{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.moveData)
-        with open(f'{directory}/stick{label}.csv', 'a', newline='') as file:
+        with open(f'data/stick{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.stickData)
-        with open(f'{directory}/trigger{label}.csv', 'a', newline='') as file:
+        with open(f'data/trigger{label}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerows(self.triggerData)
-        
         self.buttonData.clear()
         self.moveData.clear()
         self.stickData.clear()
@@ -284,4 +283,4 @@ class InputListener(XInput.EventHandler):
         self.triggerData.append([event.trigger, event.value, delay])
     
     def process_connection_event(self, event):
-        print("Controller Detected")
+        print('Controller Detected')

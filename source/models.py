@@ -31,5 +31,5 @@ class LSTMClassifier(torch.nn.Module):
             loss.backward()
             optimizer.step()
             if (epoch + 1) % 5 == 0:
-                print(f"Epoch [{(epoch + 1) / epochs}], Loss: {loss.item():.4f}")
-        print("Training Finished")
+                print(f'Epoch [{(epoch + 1) / epochs}], Loss: {loss.item():.4f}')
+        print('Training Finished')
