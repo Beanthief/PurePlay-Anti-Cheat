@@ -9,7 +9,7 @@ This solution is perfect for **low-budget game developers** who need a reliable 
 
 ## Features
 - 🎮 **Supports GamePad, Mouse, and Keyboard Inputs**
-- 🤖 **AI-Based Detection**: Trained neural networks classify human vs inhuman inputs with over 80% confidence.
+- 🤖 **AI-Based Detection**: Trained neural networks classify inputs as human or inhuman.
 - 💾 **Cross-Engine Compatibility**: Runs externally, independent of the game engine.
 - ⚙️ **Customizable Tuning**: Developers can configure client/server models.
 - 💻 **Lightweight Client & Server Models**: Supports server-only, client-only, or both depending on your setup.
