@@ -8,7 +8,7 @@ import csv
 import os
 
 class InputListener(XInput.EventHandler):
-    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True, *controllers):
+    def __init__(self, captureKeyboard=True, captureMouse=True, captureController=True, downSampleFactor=1, *controllers):
         self.captureKeyboard = captureKeyboard
         self.captureMouse = captureMouse
         self.captureController = captureController
@@ -17,13 +17,15 @@ class InputListener(XInput.EventHandler):
 
         self.startTime = time.time()
         self.lastButtonTime = self.startTime
-        self.lastMoveTime = self.startTime
-        self.lastStickTime = self.startTime
         self.lastTriggerTime = self.startTime
 
+        self.downSampleFactor = downSampleFactor
+        self.moveEventCount = 0
+        self.stickEventCount = 0
+
         self.buttonData = []  # List for [deviceType, isPressed, buttonID, delay]
-        self.moveData = []    # List for [x, y, delay]
-        self.stickData = []   # List for [stickID, x, y, delay]
+        self.moveData = []    # List for [x, y]
+        self.stickData = []   # List for [stickID, x, y]
         self.triggerData = [] # List for [triggerID, value, delay]
 
         self.executor = ThreadPoolExecutor(max_workers=10)
@@ -192,7 +194,7 @@ class InputListener(XInput.EventHandler):
             'X': 163,
             'Y': 164
         }
-    
+        
     def start(self):
         if self.captureKeyboard:
             self.keyboardListener = pynput.keyboard.Listener(
@@ -219,22 +221,26 @@ class InputListener(XInput.EventHandler):
     def save_to_files(self, label):
         if not os.path.exists('data'):
             os.makedirs('data')
-        with open(f'data/button{label}.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(self.buttonData)
-        with open(f'data/move{label}.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(self.moveData)
-        with open(f'data/stick{label}.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(self.stickData)
-        with open(f'data/trigger{label}.csv', 'a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(self.triggerData)
-        self.buttonData.clear()
-        self.moveData.clear()
-        self.stickData.clear()
-        self.triggerData.clear()
+        if self.buttonData:
+            with open(f'data/button{label}.csv', 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(self.buttonData)
+            self.buttonData.clear()
+        if self.moveData:
+            with open(f'data/move{label}.csv', 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(self.moveData)
+            self.moveData.clear()
+        if self.stickData:
+            with open(f'data/stick{label}.csv', 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(self.stickData)
+            self.stickData.clear()
+        if self.triggerData:
+            with open(f'data/trigger{label}.csv', 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(self.triggerData)
+            self.triggerData.clear()
     
     def process_key_press(self, key):
         self.executor.submit(self.handle_key_press, key)
@@ -260,7 +266,7 @@ class InputListener(XInput.EventHandler):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
         self.buttonData.append([0, 0, self.buttonMap[key], delay])
-    def handle_click_event(self, x, y, button, isPressed): # coords excluded
+    def handle_click_event(self, x, y, button, isPressed):
         delay = time.time() - self.lastButtonTime
         self.lastButtonTime = time.time()
         self.buttonData.append([1, isPressed, self.buttonMap[button], delay])
@@ -270,13 +276,13 @@ class InputListener(XInput.EventHandler):
         isPressed = 1 if event.type == 3 else 0
         self.buttonData.append([2, isPressed, self.buttonMap[event.button], delay])
     def handle_move_event(self, x, y):
-        delay = time.time() - self.lastMoveTime
-        self.lastMoveTime = time.time()
-        self.moveData.append([x, y, delay])
+        self.moveEventCount += 1
+        if self.moveEventCount % self.downSampleFactor == 0:
+            self.moveData.append([x, y])
     def handle_stick_event(self, event):
-        delay = time.time() - self.lastStickTime
-        self.lastStickTime = time.time()
-        self.stickData.append([event.stick, event.x, event.y, delay])
+        self.stickEventCount += 1
+        if self.stickEventCount % self.downSampleFactor == 0:
+            self.stickData.append([event.stick, event.x, event.y])
     def handle_trigger_event(self, event):
         delay = time.time() - self.lastTriggerTime
         self.lastTriggerTime = time.time()

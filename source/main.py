@@ -1,7 +1,8 @@
 from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
 import configparser
-import listener
 import keyboard
+import listener
 import models
 import pandas
 import torch
@@ -11,37 +12,39 @@ import os
 config = configparser.ConfigParser()
 config.read('config.ini')
 programMode = int(config['General']['programMode'])                   # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
+windowSize = int(config['General']['windowSize'])                     # Time between batch predictions and file saves
 captureKeyboard = int(config['Collection']['captureKeyboard'])
 captureMouse = int(config['Collection']['captureMouse'])
 captureController = int(config['Collection']['captureController'])    # DO NOT ENABLE AT SAME TIME AS KB OR MOUSE
+downSampleFactor = int(config['Collection']['downSampleFactor'])      # Downsampling factor for mouse events
 dataLabel = config['Collection']['dataLabel']                         # control, cheat
-saveInterval = int(config['Collection']['saveInterval'])              # Time between file saves
 killKey = config['Collection']['killKey']
 dataType = config['Training']['dataType']
-windowSize = int(config['Analysis']['windowSize'])                    # Time between batch predictions
 displayGraph = int(config['Analysis']['displayGraph'])
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController, (0))
-inputListener.start()
+inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController, downSampleFactor, (0))
 
-def convert_to_tensor(list, shape): # Use during analysis
-    return torch.tensor(list) if list else torch.empty(shape)
+def update_graph(confidence_values):
+    plt.clf()
+    plt.plot(confidence_values)
+    plt.xlabel('Window')
+    plt.ylabel('Confidence')
+    plt.title('Confidence Over Time')
+    plt.pause(0.01)
 
 match programMode:
 
     ########## Data Collection ##########
     case 0:
+        inputListener.start()
         while True:
-            time.sleep(saveInterval)
-            if keyboard.is_pressed(killKey): # Make asynchronous?
-                while keyboard.is_pressed(killKey):
-                    time.sleep(0.1)
-                inputListener.buttonData = inputListener.buttonData[:-2] # IMPROVE STRIP METHOD
-                inputListener.save_to_files(dataLabel)
-                break
-            else: inputListener.save_to_files(dataLabel)
+            if keyboard.is_pressed(killKey):
+                inputListener.stop()
+                os._exit(0)
+            time.sleep(windowSize)
+            inputListener.save_to_files(dataLabel)
 
     ########## Model Training ##########
     case 1:
@@ -51,13 +54,13 @@ match programMode:
                                            layerCount=2,
                                            device=device).to(device)
         if captureMouse:
-            moveLSTM = models.LSTMClassifier(inputSize=3,
+            moveLSTM = models.LSTMClassifier(inputSize=2,
                                              hiddenSize=32,
                                              classCount=2,
                                              layerCount=2,
                                              device=device).to(device)
         if captureController:
-            stickLSTM = models.LSTMClassifier(inputSize=4,
+            stickLSTM = models.LSTMClassifier(inputSize=3,
                                               hiddenSize=32,
                                               classCount=2,
                                               layerCount=2,
@@ -69,8 +72,8 @@ match programMode:
                                                 device=device).to(device)
 
         buttonTensor = torch.empty((0, 4))  # Button input (4 features)
-        moveTensor = torch.empty((0, 3))    # Mouse movement (3 features)
-        stickTensor = torch.empty((0, 4))   # Stick input (4 features)
+        moveTensor = torch.empty((0, 2))    # Mouse movement (2 features)
+        stickTensor = torch.empty((0, 3))   # Stick input (3 features)
         triggerTensor = torch.empty((0, 3)) # Trigger input (3 features)
 
         for fileName in os.listdir("data"):
@@ -113,6 +116,8 @@ match programMode:
 
     ########## Live Analysis ##########
     case 2: 
+        inputListener.start()
+
         scaler = StandardScaler()
         buttonLSTM = torch.load('models/button.pt')
         if captureMouse:
@@ -120,28 +125,40 @@ match programMode:
         if captureController:
             stickLSTM = torch.load('models/stick.pt')
             triggerLSTM = torch.load('models/trigger.pt')
+
+        confidence_values = []
+        if displayGraph:
+            plt.ion()
+            plt.figure()
+
         while True: # Or while game is running?
+            if keyboard.is_pressed(killKey):
+                inputListener.stop()
+                if displayGraph: # You may want to save the graph even when displayGraph false
+                    plt.savefig('confidence_graph.png')
+                os._exit(0)
             time.sleep(windowSize)
             confidence = 1
             with torch.inference_mode():
                 output = buttonLSTM(scaler.fit_transform(inputListener.buttonData))
-                confidence *= torch.softmax(output)[1] # Verify output format before doing this
+                confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                 inputListener.buttonData = []
             if captureMouse:
                 with torch.inference_mode():
                     output = moveLSTM(scaler.fit_transform(inputListener.moveData))
-                    confidence *= torch.softmax(output)[1] # Verify output format before doing this
+                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.moveData = []
             if captureController:
                 with torch.inference_mode():
                     output = stickLSTM(scaler.fit_transform(inputListener.stickData))
-                    confidence *= torch.softmax(output)[1] # Verify output format before doing this
+                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.stickData = []
                     output = triggerLSTM(scaler.fit_transform(inputListener.triggerData))
-                    confidence *= torch.softmax(output)[1] # Verify output format before doing this
+                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.triggerData = []
+            confidence_values.append(confidence.item())
             print(confidence)
-            # Display graph?
-            # Encrypt output?
+            if displayGraph:
+                update_graph(confidence_values)
 
 inputListener.stop()
