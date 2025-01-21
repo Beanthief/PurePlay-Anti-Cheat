@@ -1,4 +1,5 @@
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import configparser
 import keyboard
@@ -20,10 +21,13 @@ downSampleFactor = int(config['Collection']['downSampleFactor'])      # Downsamp
 dataLabel = config['Collection']['dataLabel']                         # control, cheat
 killKey = config['Collection']['killKey']
 dataType = config['Training']['dataType']
+learningRate = float(config['Training']['learningRate'])
+trainingEpochs = int(config['Training']['trainingEpochs'])
 displayGraph = int(config['Analysis']['displayGraph'])
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+encoder = LabelEncoder()
+scaler = StandardScaler()
 inputListener = listener.InputListener(captureKeyboard, captureMouse, captureController, downSampleFactor, (0))
 
 def update_graph(confidence_values):
@@ -81,44 +85,43 @@ match programMode:
             if os.path.isfile(filePath) and fileName.endswith('.csv'):
                 dataFrame = pandas.read_csv(filePath)
                 tensor = torch.tensor(dataFrame.values, dtype=dataType)
-                
-                if 'cheat' in fileName: # Decide on how to pass yTrain
-                    if 'button' in fileName:
-                        bTensor = torch.cat((buttonTensor, tensor), dim=0)
-                    elif 'move' in fileName:
-                        mTensor = torch.cat((moveTensor, tensor), dim=0)
-                    elif 'stick' in fileName:
-                        sTensor = torch.cat((stickTensor, tensor), dim=0)
-                    elif 'trigger' in fileName:
-                        tTensor = torch.cat((triggerTensor, tensor), dim=0)
-                elif 'control' in fileName:
-                    if 'button' in fileName:
-                        bTensor = torch.cat((buttonTensor, tensor), dim=0)
-                    elif 'move' in fileName:
-                        mTensor = torch.cat((moveTensor, tensor), dim=0)
-                    elif 'stick' in fileName:
-                        sTensor = torch.cat((stickTensor, tensor), dim=0)
-                    elif 'trigger' in fileName:
-                        tTensor = torch.cat((triggerTensor, tensor), dim=0)
+                tensor = encoder.fit_transform(tensor) # Should I exclude the first column?
+                tensor = scaler.fit_transform(tensor)
+                if 'button' in fileName:
+                    bTensor = torch.cat((buttonTensor, tensor), dim=0)
+                elif 'move' in fileName:
+                    mTensor = torch.cat((moveTensor, tensor), dim=0)
+                elif 'stick' in fileName:
+                    sTensor = torch.cat((stickTensor, tensor), dim=0)
+                elif 'trigger' in fileName:
+                    tTensor = torch.cat((triggerTensor, tensor), dim=0)
 
         if bTensor.size(0) > 0:
-            buttonLSTM.train() # Add appropriate training params
+            knownClasses = bTensor[:, 0]
+            inputTensor = bTensor[:, 1:]
+            buttonLSTM.train(inputTensor, knownClasses, trainingEpochs, learningRate)
             torch.save(buttonLSTM.state_dict(), 'models/button.pt')
         if mTensor.size(0) > 0:
-            moveLSTM.train() # Add appropriate training params
+            knownClasses = mTensor[:, 0]
+            inputTensor = mTensor[:, 1:]
+            moveLSTM.train(inputTensor, knownClasses, trainingEpochs, learningRate)
             torch.save(moveLSTM.state_dict(), 'models/move.pt')
         if sTensor.size(0) > 0:
-            stickLSTM.train() # Add appropriate training params
+            knownClasses = sTensor[:, 0]
+            inputTensor = sTensor[:, 1:]
+            stickLSTM.train(inputTensor, knownClasses, trainingEpochs, learningRate)
             torch.save(stickLSTM.state_dict(), 'models/stick.pt')
         if tTensor.size(0) > 0:
-            triggerLSTM.train() # Add appropriate training params
+            knownClasses = tTensor[:, 0]
+            inputTensor = tTensor[:, 1:]
+            triggerLSTM.train(inputTensor, knownClasses, trainingEpochs, learningRate)
             torch.save(triggerLSTM.state_dict(), 'models/trigger.pt')
 
     ########## Live Analysis ##########
     case 2: 
         inputListener.start()
 
-        scaler = StandardScaler()
+        confidence_values = []
         buttonLSTM = torch.load('models/button.pt')
         if captureMouse:
             moveLSTM = torch.load('models/move.pt')
@@ -126,39 +129,42 @@ match programMode:
             stickLSTM = torch.load('models/stick.pt')
             triggerLSTM = torch.load('models/trigger.pt')
 
-        confidence_values = []
+        plt.ioff()
+        plt.figure()
         if displayGraph:
             plt.ion()
-            plt.figure()
+            plt.show()
 
         while True: # Or while game is running?
             if keyboard.is_pressed(killKey):
                 inputListener.stop()
-                if displayGraph: # You may want to save the graph even when displayGraph false
-                    plt.savefig('confidence_graph.png')
+                plt.savefig('confidence_graph.png')
                 os._exit(0)
             time.sleep(windowSize)
             confidence = 1
-            with torch.inference_mode():
-                output = buttonLSTM(scaler.fit_transform(inputListener.buttonData))
-                confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
-                inputListener.buttonData = []
+            if captureKeyboard:
+                with torch.inference_mode():
+                    output = buttonLSTM(scaler.fit_transform(inputListener.buttonData))
+                    inputListener.buttonData = []
+                    confidence *= torch.softmax(output, dim=1)[1]
+                    
             if captureMouse:
                 with torch.inference_mode():
                     output = moveLSTM(scaler.fit_transform(inputListener.moveData))
-                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.moveData = []
+                    confidence *= torch.softmax(output, dim=1)[1]
+                    
             if captureController:
                 with torch.inference_mode():
                     output = stickLSTM(scaler.fit_transform(inputListener.stickData))
-                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.stickData = []
+                    confidence *= torch.softmax(output, dim=1)[1]
+                    
                     output = triggerLSTM(scaler.fit_transform(inputListener.triggerData))
-                    confidence *= torch.softmax(output, dim=1)[1] # Verify output format before doing this
                     inputListener.triggerData = []
+                    confidence *= torch.softmax(output, dim=1)[1]
+                    
             confidence_values.append(confidence.item())
-            print(confidence)
-            if displayGraph:
-                update_graph(confidence_values)
+            update_graph(confidence_values)
 
 inputListener.stop()
