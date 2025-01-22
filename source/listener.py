@@ -54,28 +54,26 @@ class InputListener(XInput.EventHandler):
         self.executor.shutdown(wait=True)
 
     def save_to_files(self, label):
-        if not os.path.exists('data'):
-            os.makedirs('data')
+        os.makedirs('data', exist_ok=True)
         
-        def write_data(file_name, data, headers):
-            file_exists = os.path.isfile(file_name)
+        def write_data(file_name, data, header):
             with open(file_name, 'a', newline='') as file:
                 writer = csv.writer(file)
-                if not file_exists:
-                    writer.writerow(headers)
+                if not os.path.exists(file_name) or os.stat(file_name).st_size == 0:
+                    writer.writerow(header)
                 writer.writerows([[label] + row for row in data])
         
         if self.buttonData:
-            write_data(f'data/button{label}.csv', self.buttonData, ['Label', 'DeviceType', 'IsPressed', 'ButtonID', 'Delay'])
+            write_data(f'data/button{label}.csv', self.buttonData, ['Class', 'Device', 'isPressed', 'ButtonID', 'Delay'])
             self.buttonData.clear()
         if self.moveData:
-            write_data(f'data/move{label}.csv', self.moveData, ['Label', 'X', 'Y'])
+            write_data(f'data/move{label}.csv', self.moveData, ['Class', 'X', 'Y'])
             self.moveData.clear()
         if self.stickData:
-            write_data(f'data/stick{label}.csv', self.stickData, ['Label', 'StickID', 'X', 'Y'])
+            write_data(f'data/stick{label}.csv', self.stickData, ['Class', 'StickID', 'X', 'Y'])
             self.stickData.clear()
         if self.triggerData:
-            write_data(f'data/trigger{label}.csv', self.triggerData, ['Label', 'TriggerID', 'Value', 'Delay'])
+            write_data(f'data/trigger{label}.csv', self.triggerData, ['Class', 'TriggerID', 'Value', 'Delay'])
             self.triggerData.clear()
     
     def process_key_press(self, key):
