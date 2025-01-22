@@ -36,16 +36,10 @@ def BinaryLSTM(inputShape):
     model.add(keras.Input(shape=inputShape))
     model.add(keras.layers.LSTM(32, return_sequences=True))
     model.add(keras.layers.LSTM(32))
-    model.add(keras.layers.Dense(64, activation='sigmoid')) # Don't I want 2 output classes?
+    model.add(keras.layers.Dense(2, activation='sigmoid')) # Don't I want 2 output classes?
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     model.summary()
     return model
-
-def train_model(model, input, epochs):
-    xTrain = input[:, :, 1:]
-    yTrain = input[:, :, 0]
-    model.fit(xTrain, yTrain, epochs=epochs)
-    print('Training Finished')
 
 def update_graph(confidenceValues):
     plt.clf()
@@ -76,46 +70,50 @@ match programMode:
             stickLSTM = BinaryLSTM(inputShape=(batchSize, 3))
             triggerLSTM = BinaryLSTM(inputShape=(batchSize, 3))
 
-        buttonTensor = tf.zeros((0, batchSize, 5), dtype=tf.float32)
-        moveTensor = tf.zeros((0, batchSize, 3), dtype=tf.float32)
-        stickTensor = tf.zeros((0, batchSize, 4), dtype=tf.float32)
-        triggerTensor = tf.zeros((0, batchSize, 4), dtype=tf.float32)
+        buttonX = []
+        buttonY = []
+        moveX = []
+        moveY = []
+        stickX = []
+        stickY = []
+        triggerX = []
+        triggerY = []
 
         for fileName in os.listdir("data"):
             filePath = os.path.join("data", fileName)
             if os.path.isfile(filePath) and fileName.endswith('.csv'):
                 dataFrame = pandas.read_csv(filePath)
-                dataFrame = dataFrame.apply(encoder.fit_transform)
-                dataFrame = pandas.DataFrame(scaler.fit_transform(dataFrame), columns=dataFrame.columns)
-                tensor = tf.convert_to_tensor(dataFrame.values, dtype=tf.float32)
-
-                if tensor.shape[0] % batchSize == 0: # Using fixed batch sizes okay?
-                    batchTensors = tf.split(tensor, tensor.shape[0] // batchSize, axis=0)
-                else:
-                    batchTensors = tf.split(tensor[:-(tensor.shape[0] % batchSize)], tensor.shape[0] // batchSize, axis=0)
+                dataArray = dataFrame.to_numpy() # Need to encode strings and normalize
+                inputData = dataArray[:, 1:]
+                knownClasses = dataArray[:, 0]
                 
-                for batchTensor in batchTensors:
-                    if 'button' in fileName:
-                        buttonTensor = tf.concat([buttonTensor, tf.expand_dims(batchTensor, 0)], axis=0)
-                    elif 'move' in fileName:
-                        moveTensor = tf.concat([moveTensor, tf.expand_dims(batchTensor, 0)], axis=0)
-                    elif 'stick' in fileName:
-                        stickTensor = tf.concat([stickTensor, tf.expand_dims(batchTensor, 0)], axis=0)
-                    elif 'trigger' in fileName:
-                        triggerTensor = tf.concat([triggerTensor, tf.expand_dims(batchTensor, 0)], axis=0)
+                print(inputData)
+                if 'button' in fileName:
+                    buttonX.append(inputData)
+                    buttonY.append(knownClasses)
+                elif 'move' in fileName:
+                    moveX.append(inputData)
+                    moveY.append(knownClasses)
+                elif 'stick' in fileName:
+                    stickX.append(inputData)
+                    stickY.append(knownClasses)
+                elif 'trigger' in fileName:
+                    triggerX.append(inputData)
+                    triggerY.append(knownClasses)
 
         os.makedirs('models', exist_ok=True)
-        if tf.size(buttonTensor) > 0:
-            train_model(buttonLSTM, buttonTensor, trainingEpochs)
+
+        if buttonX:
+            buttonLSTM.fit(buttonX, buttonY, epochs=trainingEpochs)
             buttonLSTM.save('models/button.keras')
-        if tf.size(moveTensor) > 0:
-            train_model(moveLSTM, moveTensor, trainingEpochs)
+        if moveX:
+            moveLSTM.fit(moveX, moveY, epochs=trainingEpochs)
             moveLSTM.save('models/move.keras')
-        if tf.size(stickTensor) > 0:
-            train_model(stickLSTM, stickTensor, trainingEpochs)
+        if stickX:
+            stickLSTM.fit(stickX, stickY, epochs=trainingEpochs)
             stickLSTM.save('models/stick.keras')
-        if tf.size(triggerTensor) > 0:
-            train_model(triggerLSTM, triggerTensor, trainingEpochs)
+        if triggerX:
+            triggerLSTM.fit(triggerX, triggerY, epochs=trainingEpochs)
             triggerLSTM.save('models/trigger.keras')
 
     ########## Live Analysis ##########

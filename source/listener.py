@@ -61,7 +61,11 @@ class InputListener(XInput.EventHandler):
                 writer = csv.writer(file)
                 if not os.path.exists(file_name) or os.stat(file_name).st_size == 0:
                     writer.writerow(header)
-                writer.writerows([[label] + row for row in data])
+                if label == 'cheat':
+                    labelNum = 1
+                elif label == 'control':
+                    labelNum = 0
+                writer.writerows([[labelNum] + row for row in data])
         
         if self.buttonData:
             write_data(f'data/button{label}.csv', self.buttonData, ['Class', 'Device', 'isPressed', 'ButtonID', 'Delay'])
