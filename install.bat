@@ -12,8 +12,12 @@ if errorlevel 1 (
     echo Downloading Python %PYTHON_VERSION%...
     curl -LO https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER%
 
-    echo Installing Python...
-    start /wait %PYTHON_INSTALLER% /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+    echo The Python installer has been downloaded.
+    echo The installer can be found at: %cd%\%PYTHON_INSTALLER% 
+    echo Please run the installer, ensure Python is added to PATH, then re-run this script.
+    endlocal
+    pause
+    exit
 ) else (
     echo Python %PYTHON_VERSION% is already installed.
 )

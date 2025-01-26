@@ -19,26 +19,12 @@ captureKBM =        int(config['General']['captureKBM'])
 captureController = int(config['General']['captureController'])
 pollInterval =    float(config['General']['pollInterval'])      # in milliseconds
 killKey =               config['General']['killKey']
-dataLabel =             config['Collection']['dataLabel']       # control, cheat, etc.
+dataClass =         int(config['Collection']['dataClass'])      # target classes (0 = legit, 1 = cheats)
 saveInterval =      int(config['Collection']['saveInterval'])
 batchSize =         int(config['Training']['batchSize'])
 learningRate =    float(config['Training']['learningRate'])
 trainingEpochs =    int(config['Training']['trainingEpochs'])
 displayGraph =      int(config['Reporting']['displayGraph'])
-
-print('Using device:', tensorflow.config.list_physical_devices('GPU'))
-scaler = StandardScaler()
-
-def BinaryLSTM(inputShape):
-    model = keras.Sequential()
-    model.add(keras.Input(shape=inputShape))
-    model.add(keras.layers.LSTM(32, return_sequences=True))
-    model.add(keras.layers.LSTM(32))
-    model.add(keras.layers.Dense(2, activation='sigmoid')) # Don't I want 2 output classes?
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    model.summary()
-    return model
-
 keys = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
     'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
@@ -51,9 +37,17 @@ keys = [
     'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
     'print screen', 'pause', 'break', 'windows', 'menu'
     ] + list(keyboard.all_modifiers)
-kbmFeatures = len(keys) + 5 # 5 mouse features
-kbmData = []
-controllerData = []
+scaler = StandardScaler()
+
+def BinaryLSTM(inputShape):
+    model = keras.Sequential()
+    model.add(keras.Input(shape=inputShape))
+    model.add(keras.layers.LSTM(32, return_sequences=True))
+    model.add(keras.layers.LSTM(32))
+    model.add(keras.layers.Dense(2, activation='sigmoid')) # Don't I want 2 output classes?
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
 
 def poll_inputs():
     kbmList = []
@@ -74,25 +68,29 @@ def poll_inputs():
             kbmList.append(0)
         kbmList.extend(mouse.get_position())
     if captureController:
-        if XInput.get_connected():
+        if XInput.get_connected()[0]:
             controllerList = [int(value) for value in XInput.get_button_values(XInput.get_state(0)).values()]
-            controllerList.extend(XInput.get_thumb_values(XInput.get_state(0)))
             controllerList.extend(XInput.get_trigger_values(XInput.get_state(0)))
-        else:
-            print('Controller not connected')
+            thumbValues = XInput.get_thumb_values(XInput.get_state(0))
+            controllerList.extend(thumbValues[0])
+            controllerList.extend(thumbValues[1])
     return kbmList, controllerList
 
-def save_data():
+def save_data(kbmData, controllerData):
     while True:
         time.sleep(saveInterval)
         if kbmData:
-            with open(f'data/kbm{dataLabel}Data.csv', 'a', newline='') as file:
+            with open(f'data/kbm{dataClass}Data.csv', 'a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(kbmData)
+                for row in kbmData:
+                    writer.writerow(row)
+                kbmData = []
         if controllerData:
-            with open(f'data/controller{dataLabel}Data.csv', 'a', newline='') as file:
+            with open(f'data/controller{dataClass}Data.csv', 'a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(controllerData)
+                for row in controllerData:
+                    writer.writerow(row)
+                controllerData = []
 
 def update_graph(confidenceValues):
     plt.clf()
@@ -106,23 +104,32 @@ match programMode:
     ########## Data Collection ##########
     case 0:
         os.makedirs('data', exist_ok=True)
-        threading.Thread(target=save_data, daemon=True).start()
+        kbmData = []
+        controllerData = []
+        threading.Thread(target=save_data, args=(kbmData, controllerData), daemon=True).start()
+        if not XInput.get_connected()[0]:
+            print('No controller detected')
         while True:
             time.sleep(pollInterval/1000)
             if keyboard.is_pressed(killKey):
                 os._exit(0)
             kbmRead, controllerRead = poll_inputs()
             if kbmRead:
+                kbmRead.append(dataClass)
                 kbmData.append(kbmRead)
             if controllerRead:
+                controllerRead.append(dataClass)
                 controllerData.append(controllerRead)
     
     ########## Model Training ##########
-    case 1:
+    case 1:                                                                           # DO I WANT TO SEPARATE BY DEVICE, PLAYSTYLE, OR INPUT TYPE??
         if captureKBM:
-            kbmLSTM = BinaryLSTM(inputShape=(batchSize, kbmFeatures))
+            kbmLSTM = BinaryLSTM(inputShape=(batchSize, len(keys) + 5)) # 5 mouse features
         if captureController:
-            controllerLSTM = BinaryLSTM(inputShape=(batchSize, 16)) # 16 controller features
+            controllerList = [int(value) for value in XInput.get_button_values(XInput.get_state(0)).values()]
+            controllerList.extend(XInput.get_thumb_values(XInput.get_state(0)))
+            controllerList.extend(XInput.get_trigger_values(XInput.get_state(0)))
+            controllerLSTM = BinaryLSTM(inputShape=(batchSize, len(controllerList)))
 
         kbmX = []
         kbmY = []
@@ -132,16 +139,19 @@ match programMode:
         for fileName in os.listdir("data"):
             filePath = os.path.join("data", fileName)
             if os.path.isfile(filePath) and fileName.endswith('.csv'):
-                dataFrame = pandas.read_csv(filePath)
-                dataArray = dataFrame.to_numpy()
-                # inputData = 
-                # knownClasses = 
-                # if fileName.startswith('kbm'):
-                #     kbmX.append(inputData)
-                #     kbmY.append(knownClasses)
-                # elif fileName.startswith('controller'):
-                #     controllerX.append(inputData)
-                #     controllerY.append(knownClasses)
+                dataArray = pandas.read_csv(filePath).to_numpy()
+                inputData = scaler.fit_transform(dataArray[:, :-1])
+                knownClasses = dataArray[:, -1]
+
+                print(inputData) # Need to batch
+                print(knownClasses)
+
+                if fileName.startswith('kbm'):
+                    kbmX.append(inputData)
+                    kbmY.append(knownClasses)
+                elif fileName.startswith('controller'):
+                    controllerX.append(inputData)
+                    controllerY.append(knownClasses)
 
         os.makedirs('models', exist_ok=True)
 
