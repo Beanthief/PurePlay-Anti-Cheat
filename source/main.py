@@ -1,13 +1,13 @@
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import configparser
-import tensorflow
 import threading
 import keyboard
 import pandas
 import XInput
 import mouse
 import keras
+import numpy
 import time
 import csv
 import os
@@ -18,10 +18,11 @@ programMode =       int(config['General']['programMode'])       # 0 = Data Colle
 captureKBM =        int(config['General']['captureKBM'])
 captureController = int(config['General']['captureController'])
 pollInterval =    float(config['General']['pollInterval'])      # in milliseconds
-killKey =               config['General']['killKey']
+predInterval =    float(config['General']['predInterval'])      # in seconds
+killKey =           str(config['General']['killKey'])
 dataClass =         int(config['Collection']['dataClass'])      # target classes (0 = legit, 1 = cheats)
-saveInterval =      int(config['Collection']['saveInterval'])
-batchSize =         int(config['Training']['batchSize'])
+saveInterval =      int(config['Collection']['saveInterval'])   # in seconds
+trainFileCount =    int(config['Training']['trainFileCount'])
 learningRate =    float(config['Training']['learningRate'])
 trainingEpochs =    int(config['Training']['trainingEpochs'])
 displayGraph =      int(config['Reporting']['displayGraph'])
@@ -38,13 +39,13 @@ keys = [
     'print screen', 'pause', 'break', 'windows', 'menu'
     ] + list(keyboard.all_modifiers)
 scaler = StandardScaler()
+confidenceValues = []
 
 def BinaryLSTM(inputShape):
     model = keras.Sequential()
     model.add(keras.Input(shape=inputShape))
     model.add(keras.layers.LSTM(32, return_sequences=True))
-    model.add(keras.layers.LSTM(32))
-    model.add(keras.layers.Dense(2, activation='sigmoid')) # Don't I want 2 output classes?
+    model.add(keras.layers.Dense(1, activation='sigmoid')) # Don't I want 2 output classes?
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     model.summary()
     return model
@@ -92,6 +93,27 @@ def save_data(kbmData, controllerData):
                     writer.writerow(row)
                 controllerData = []
 
+def analyze_data(kbmData, controllerData):
+    if captureKBM:
+        kbmLSTM = keras.saving.load_model('models/kbm.keras')
+    elif captureController:
+        controllerLSTM = keras.saving.load_model('models/controller.keras')
+    else:
+        print('No models loaded')
+        os._exit(0)
+
+    while True:
+        time.sleep(predInterval)
+        if kbmData:
+            inputData = scaler.fit_transform(kbmData)
+            inputData = inputData.reshape(1, inputData.shape[0], inputData.shape[1])
+            confidence = kbmLSTM.predict(inputData)[0][1]
+        if controllerData:
+            inputData = scaler.fit_transform(controllerData)
+            inputData = inputData.reshape(1, inputData.shape[0], inputData.shape[1])
+            confidence = controllerLSTM.predict(inputData)[0][1]
+        confidenceValues.append(confidence)
+
 def update_graph(confidenceValues):
     plt.clf()
     plt.plot(confidenceValues)
@@ -124,12 +146,9 @@ match programMode:
     ########## Model Training ##########
     case 1:                                                                           # DO I WANT TO SEPARATE BY DEVICE, PLAYSTYLE, OR INPUT TYPE??
         if captureKBM:
-            kbmLSTM = BinaryLSTM(inputShape=(batchSize, len(keys) + 5)) # 5 mouse features
+            kbmLSTM = BinaryLSTM(inputShape=(None, len(keys) + 5)) # 5 mouse features
         if captureController:
-            controllerList = [int(value) for value in XInput.get_button_values(XInput.get_state(0)).values()]
-            controllerList.extend(XInput.get_thumb_values(XInput.get_state(0)))
-            controllerList.extend(XInput.get_trigger_values(XInput.get_state(0)))
-            controllerLSTM = BinaryLSTM(inputShape=(batchSize, len(controllerList)))
+            controllerLSTM = BinaryLSTM(inputShape=(None, 20)) # 20 controller features
 
         kbmX = []
         kbmY = []
@@ -139,61 +158,55 @@ match programMode:
         for fileName in os.listdir("data"):
             filePath = os.path.join("data", fileName)
             if os.path.isfile(filePath) and fileName.endswith('.csv'):
-                dataArray = pandas.read_csv(filePath).to_numpy()
-                inputData = scaler.fit_transform(dataArray[:, :-1])
-                knownClasses = dataArray[:, -1]
-
-                print(inputData) # Need to batch
-                print(knownClasses)
-
+                dataMatrix = pandas.read_csv(filePath).to_numpy()
+                inputData = scaler.fit_transform(dataMatrix[:, :-1])
+                knownClasses = dataMatrix[:, -1]
                 if fileName.startswith('kbm'):
                     kbmX.append(inputData)
                     kbmY.append(knownClasses)
                 elif fileName.startswith('controller'):
                     controllerX.append(inputData)
                     controllerY.append(knownClasses)
-
+        
         os.makedirs('models', exist_ok=True)
 
         if kbmX:
+            kbmX_padded = keras.utils.pad_sequences(kbmX, padding='post', dtype='float32')
+            kbmX = numpy.array(kbmX_padded)
+            kbmY_padded = keras.utils.pad_sequences(kbmY, padding='post', dtype='float32')
+            kbmY = numpy.array(kbmY_padded)
             kbmLSTM.fit(kbmX, kbmY, epochs=trainingEpochs)
             kbmLSTM.save('models/kbm.keras')
         if controllerX:
+            controllerX_padded = keras.utils.pad_sequences(controllerX, padding='post', dtype='float32')
+            controllerX = numpy.array(controllerX_padded)
+            controllerY_padded = keras.utils.pad_sequences(controllerY, padding='post', dtype='float32')
+            controllerY = numpy.array(controllerY_padded)
             controllerLSTM.fit(controllerX, controllerY, epochs=trainingEpochs)
             controllerLSTM.save('models/controller.keras')
-
+        
     ########## Live Analysis ##########
     case 2: 
-        confidence_values = []
-
-        if captureKBM:
-            kbmLSTM = keras.saving.load_model('models/kbm.keras')
-        elif captureController:
-            controllerLSTM = keras.saving.load_model('models/controller.keras')
-        else:
-            print('No models loaded')
-            os._exit(0)
+        kbmData = []
+        controllerData = []
 
         plt.ioff()
         plt.figure()
         if displayGraph:
             plt.ion()
-            plt.show()
+            plt.show()    
+
+        threading.Thread(target=analyze_data, args=(kbmData, controllerData), daemon=True).start()
 
         while True: # Or while game is running?
             time.sleep(pollInterval/1000)
             if keyboard.is_pressed(killKey):
-                plt.savefig('confidence_graph.png')
+                os.makedirs('reports', exist_ok=True)
+                plt.savefig('reports/confidence_graph.png')
                 os._exit(0)
-            kbmData, controllerData = poll_inputs()
-            confidence = 1
+            kbmRead, controllerRead = poll_inputs()
             if captureKBM:
-                input_data = scaler.fit_transform(kbmData)
-                output = kbmLSTM.predict(input_data) # How to predict?
-                confidence *= output[0][1]
+                kbmData.append(kbmRead)
             if captureController:
-                input_data = scaler.fit_transform(controllerData)
-                output = controllerLSTM.predict(input_data) # How to predict?
-                confidence *= output[0][1]
-            confidence_values.append(confidence)
-            update_graph(confidence_values)
+                controllerData.append(controllerRead)
+            update_graph(confidenceValues)
