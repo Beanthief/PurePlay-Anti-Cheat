@@ -18,12 +18,11 @@ programMode =       int(config['General']['programMode'])       # 0 = Data Colle
 captureKBM =        int(config['General']['captureKBM'])
 captureController = int(config['General']['captureController'])
 pollInterval =    float(config['General']['pollInterval'])      # in milliseconds
-predInterval =    float(config['General']['predInterval'])      # in seconds
+windowSize =        int(config['General']['windowSize'])        # number of timesteps to include in a sequence
 killKey =           str(config['General']['killKey'])
 dataClass =         int(config['Collection']['dataClass'])      # target classes (0 = legit, 1 = cheats)
 saveInterval =      int(config['Collection']['saveInterval'])   # in seconds
 trainFileCount =    int(config['Training']['trainFileCount'])
-learningRate =    float(config['Training']['learningRate'])
 trainingEpochs =    int(config['Training']['trainingEpochs'])
 displayGraph =      int(config['Reporting']['displayGraph'])
 keys = [
@@ -39,7 +38,6 @@ keys = [
     'print screen', 'pause', 'break', 'windows', 'menu'
     ] + list(keyboard.all_modifiers)
 scaler = StandardScaler()
-confidenceValues = []
 
 def BinaryLSTM(inputShape):
     model = keras.Sequential()
@@ -93,35 +91,6 @@ def save_data(kbmData, controllerData):
                     writer.writerow(row)
                 controllerData = []
 
-def analyze_data(kbmData, controllerData):
-    if captureKBM:
-        kbmLSTM = keras.saving.load_model('models/kbm.keras')
-    elif captureController:
-        controllerLSTM = keras.saving.load_model('models/controller.keras')
-    else:
-        print('No models loaded')
-        os._exit(0)
-
-    while True:
-        time.sleep(predInterval)
-        if kbmData:
-            inputData = scaler.fit_transform(kbmData)
-            inputData = inputData.reshape(1, inputData.shape[0], inputData.shape[1])
-            confidence = kbmLSTM.predict(inputData)[0][1]
-        if controllerData:
-            inputData = scaler.fit_transform(controllerData)
-            inputData = inputData.reshape(1, inputData.shape[0], inputData.shape[1])
-            confidence = controllerLSTM.predict(inputData)[0][1]
-        confidenceValues.append(confidence)
-
-def update_graph(confidenceValues):
-    plt.clf()
-    plt.plot(confidenceValues)
-    plt.xlabel('Window')
-    plt.ylabel('Confidence')
-    plt.title('Confidence Over Time')
-    plt.pause(0.01)
-
 match programMode:
     ########## Data Collection ##########
     case 0:
@@ -144,11 +113,11 @@ match programMode:
                 controllerData.append(controllerRead)
     
     ########## Model Training ##########
-    case 1:                                                                           # DO I WANT TO SEPARATE BY DEVICE, PLAYSTYLE, OR INPUT TYPE??
+    case 1: # DO I WANT TO SEPARATE BY DEVICE, PLAYSTYLE, OR INPUT TYPE??
         if captureKBM:
-            kbmLSTM = BinaryLSTM(inputShape=(None, len(keys) + 5)) # 5 mouse features
+            kbmLSTM = BinaryLSTM(inputShape=(windowSize, len(keys) + 5)) # 5 mouse features
         if captureController:
-            controllerLSTM = BinaryLSTM(inputShape=(None, 20)) # 20 controller features
+            controllerLSTM = BinaryLSTM(inputShape=(windowSize, 20)) # 20 controller features
 
         kbmX = []
         kbmY = []
@@ -161,52 +130,98 @@ match programMode:
                 dataMatrix = pandas.read_csv(filePath).to_numpy()
                 inputData = scaler.fit_transform(dataMatrix[:, :-1])
                 knownClasses = dataMatrix[:, -1]
-                if fileName.startswith('kbm'):
-                    kbmX.append(inputData)
-                    kbmY.append(knownClasses)
-                elif fileName.startswith('controller'):
-                    controllerX.append(inputData)
-                    controllerY.append(knownClasses)
+
+                for i in range(0, len(inputData), windowSize):
+                    inputSequence = inputData[i:i + windowSize]
+                    classSequence = knownClasses[i:i + windowSize]
+
+                    if len(inputSequence) == windowSize:
+                        if fileName.startswith('kbm'):
+                            kbmX.append(inputSequence)
+                            kbmY.append(classSequence)
+                        elif fileName.startswith('controller'):
+                            controllerX.append(inputSequence)
+                            controllerY.append(classSequence)
         
         os.makedirs('models', exist_ok=True)
 
         if kbmX:
-            kbmX_padded = keras.utils.pad_sequences(kbmX, padding='post', dtype='float32')
-            kbmX = numpy.array(kbmX_padded)
-            kbmY_padded = keras.utils.pad_sequences(kbmY, padding='post', dtype='float32')
-            kbmY = numpy.array(kbmY_padded)
+            kbmX = numpy.array(kbmX)
+            kbmY = numpy.array(kbmY)
             kbmLSTM.fit(kbmX, kbmY, epochs=trainingEpochs)
             kbmLSTM.save('models/kbm.keras')
+
         if controllerX:
-            controllerX_padded = keras.utils.pad_sequences(controllerX, padding='post', dtype='float32')
-            controllerX = numpy.array(controllerX_padded)
-            controllerY_padded = keras.utils.pad_sequences(controllerY, padding='post', dtype='float32')
-            controllerY = numpy.array(controllerY_padded)
+            controllerX = numpy.array(controllerX)
+            controllerY = numpy.array(controllerY)
             controllerLSTM.fit(controllerX, controllerY, epochs=trainingEpochs)
             controllerLSTM.save('models/controller.keras')
         
     ########## Live Analysis ##########
     case 2: 
-        kbmData = []
-        controllerData = []
+        modelLoaded = False
+        if captureKBM:
+            try:
+                kbmLSTM = keras.saving.load_model('models/kbm.keras')
+                modelLoaded = True
+            except:
+                print('No kbm model found')
+        if captureController:
+            try:
+                controllerLSTM = keras.saving.load_model('models/controller.keras')
+                modelLoaded = True
+            except:
+                print('No controller model found')
+        if not modelLoaded:
+            print('Error: No models were found. Exiting...')
+            os.exit(0)
 
         plt.ioff()
         plt.figure()
         if displayGraph:
             plt.ion()
-            plt.show()    
+            plt.show() 
 
-        threading.Thread(target=analyze_data, args=(kbmData, controllerData), daemon=True).start()
+        kbmData = numpy.empty((windowSize, len(keys) + 5))
+        controllerData = numpy.empty((windowSize, 20))
+        kbmIndex = 0
+        controllerIndex = 0
+        confidence = 0
+        confidenceValues = []
 
-        while True: # Or while game is running?
-            time.sleep(pollInterval/1000)
+        while True: # Or while the game is running
+            time.sleep(pollInterval / 1000)
+            
             if keyboard.is_pressed(killKey):
                 os.makedirs('reports', exist_ok=True)
                 plt.savefig('reports/confidence_graph.png')
                 os._exit(0)
+            
             kbmRead, controllerRead = poll_inputs()
+            if kbmRead:
+                kbmData[kbmIndex % windowSize] = kbmRead
+            if controllerRead:
+                controllerData[controllerIndex % windowSize] = controllerRead
+
+            kbmIndex += 1
+            controllerIndex += 1
+
             if captureKBM:
-                kbmData.append(kbmRead)
+                if kbmIndex >= windowSize:
+                    inputData = scaler.fit_transform(kbmData)
+                    confidence = kbmLSTM.predict(inputData[None, ...])[0][1]
+                    confidenceValues.append(confidence)
+                    kbmIndex = 0
             if captureController:
-                controllerData.append(controllerRead)
-            update_graph(confidenceValues)
+                if controllerIndex >= windowSize:
+                    inputData = scaler.fit_transform(controllerData)
+                    confidence = controllerLSTM.predict(inputData[None, ...])[0][1]
+                    confidenceValues.append(confidence)
+                    controllerIndex = 0
+
+            plt.clf()
+            plt.plot(confidenceValues)
+            plt.xlabel('Window')
+            plt.ylabel('Confidence')
+            plt.title('Confidence Over Time')
+            plt.pause(0.01)
