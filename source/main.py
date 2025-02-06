@@ -1,4 +1,4 @@
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import configparser
 import threading
@@ -37,7 +37,7 @@ keys = [
     'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
     'print screen', 'pause', 'break', 'windows', 'menu'
     ] + list(keyboard.all_modifiers)
-scaler = StandardScaler()
+scaler = MinMaxScaler()
 
 def BinaryLSTM(inputShape):
     model = keras.Sequential()
