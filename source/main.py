@@ -50,7 +50,7 @@ scaler = MinMaxScaler()
 
 modelLayers = 2
 modelNeurons = 64
-windowSize = 10
+windowSize = 20
 trainingEpochs = 50
 
 def BinaryLSTM(inputShape, layerCount, neuronCount):
@@ -71,22 +71,23 @@ class Device:
         self.whitelist = whitelist
         self.sequence = []
         self.confidenceList = []
+        self.model = None
+        self.xTrain = []
+        self.yTrain = []
         if self.whitelist == ['']:
             self.whitelist = self.features
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
         if invalidFeatures:
             raise ValueError(f"Error: Invalid feature(s) in whitelist: {invalidFeatures}")
-        match programMode:
-            case 1:
-                self.model = BinaryLSTM((windowSize, len(self.whitelist)), modelLayers, modelNeurons)
-                self.xTrain = []
-                self.yTrain = []
-            case 2:
-                try:
-                    self.model = keras.saving.load_model(f'models/{self.deviceType}.keras')
-                except:
-                    print(f'No {self.deviceType} model found')
-
+        
+    def create_model(self):
+        self.model = BinaryLSTM((windowSize, len(self.whitelist)), modelLayers, modelNeurons)
+    
+    def load_model(self, path):
+        try:
+            self.model = keras.saving.load_model(path)
+        except:
+            print(f'No {self.deviceType} model found')
     
     def save_sequence(self, fileName):
         os.makedirs('data', exist_ok=True)
@@ -97,7 +98,7 @@ class Device:
             for state in self.sequence:
                 writer.writerow(state + [dataClass])
 
-    def get_confidence(self):
+    def get_confidence(self, inputData):
         self.confidenceList.append(self.model.predict(inputData[None, ...])[0][1][0])
 
 class Keyboard(Device):
@@ -174,7 +175,7 @@ match programMode:
                 if os.path.isfile(filePath) and fileName.endswith('.csv'):
                     if fileName.startswith(device.deviceType):
                         dataFrame = pandas.read_csv(filePath)
-                        dataMatrix = dataFrame[device.features + ['dataClass']].to_numpy()
+                        dataMatrix = dataFrame[device.whitelist + ['dataClass']].to_numpy()
                         inputData = scaler.fit_transform(dataMatrix[:, :-1])
                         knownClasses = dataMatrix[:, -1]
                         for i in range(0, len(inputData), windowSize):
@@ -187,13 +188,15 @@ match programMode:
             if device.xTrain:
                 device.xTrain = numpy.array(device.xTrain)
                 device.yTrain = numpy.array(device.yTrain)
+                device.create_model()
                 device.model.fit(device.xTrain, device.yTrain, epochs=trainingEpochs)
-                device.model.save('models/keyboard.keras')
+                device.model.save(f'models/{device.deviceType}.keras')
 
     ########## Live Analysis ##########
     case 2: 
         modelLoaded = False
         for device in devices:
+            device.load_model(f'models/{device.deviceType}.keras')
             if device.model:
                 modelLoaded = True
         if not modelLoaded:
@@ -221,7 +224,12 @@ match programMode:
             for device in devices:
                 if device.isCapturing:
                     device.poll()
-                    if len(device.sequence) == windowSize:
-                        inputData = scaler.fit_transform(numpy.array(device.sequence))
-                        device.get_confidence()
+                    filteredSequence = []
+                    for state in device.sequence:
+                        filteredState = [state[device.features.index(feature)] for feature in device.whitelist]
+                        print(filteredState)
+                        filteredSequence.append(filteredState)
+                    if len(filteredSequence) == windowSize:
+                        inputData = scaler.fit_transform(numpy.array(filteredSequence))
+                        device.get_confidence(inputData)
                         device.sequence = []
