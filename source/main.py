@@ -1,7 +1,6 @@
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import configparser
-import threading
 import keyboard
 import pandas
 import XInput
@@ -20,59 +19,11 @@ captureMouse =      int(config['General']['captureMouse'])    # toggle for mouse
 captureGamepad =    int(config['General']['captureGamepad'])  # toggle for gamepad capture
 killKey =           str(config['General']['killKey'])         # key to close program
 dataClass =         int(config['Collection']['dataClass'])    # target classes (0 = legit, 1 = cheats)
-saveInterval =      int(config['Collection']['saveInterval']) # in seconds
-trainingEpochs =    int(config['Tuning']['trainingEpochs'])   # number of training cycles
-pollInterval =    float(config['Tuning']['pollInterval'])     # in milliseconds
-windowSize =        int(config['Tuning']['windowSize'])       # number of state lists to process together (sequence length)
-keyWhitelist =      str(config['Tuning']['keyWhitelist']).split(',')     # keyboard features to include (all options in keyboardFeatures)
+saveInterval =      int(config['Collection']['saveInterval']) # number of polls before save
+pollInterval =    float(config['Tuning']['pollInterval'])     # time between state polls in milliseconds
+keyboardWhitelist = str(config['Tuning']['keyboardWhitelist']).split(',')     # keyboard features to include (all options in keyboardFeatures)
 mouseWhitelist =    str(config['Tuning']['mouseWhitelist']).split(',')   # mouse features to include (all options in mouseFeatures)
 gamepadWhitelist =  str(config['Tuning']['gamepadWhitelist']).split(',') # gamepad features to include (all options in gamepadFeatures)
-scaler = MinMaxScaler()
-
-def BinaryLSTM(inputShape):
-    model = keras.Sequential()
-    model.add(keras.Input(shape=inputShape))
-    model.add(keras.layers.LSTM(32, return_sequences=True))
-    model.add(keras.layers.Dense(1, activation='sigmoid'))
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    model.summary()
-    return model
-
-def poll_inputs():
-    keyList = []
-    mouseList = []
-    gamepadList = []
-    if captureKeyboard:
-        keyList = [1 if keyboard.is_pressed(key) else 0 for key in keyboardFeatures]
-    if captureMouse:
-        if mouse.is_pressed(button='left'):
-            mouseList.append(1)
-        else:
-            mouseList.append(0)
-        if mouse.is_pressed(button='right'):
-            mouseList.append(1)
-        else:
-            mouseList.append(0)
-        if mouse.is_pressed(button='middle'):
-            mouseList.append(1)
-        else:
-            mouseList.append(0)
-        mouseList.extend(mouse.get_position())
-    if captureGamepad:
-        if XInput.get_connected()[0]:
-            gamepadList = [int(value) for value in XInput.get_button_values(XInput.get_state(0)).values()]
-            gamepadList.extend(XInput.get_trigger_values(XInput.get_state(0)))
-            thumbValues = XInput.get_thumb_values(XInput.get_state(0))
-            gamepadList.extend(thumbValues[0])
-            gamepadList.extend(thumbValues[1])
-    return keyList, mouseList, gamepadList
-
-def validate_whitelist(whitelist, featureList):
-    if whitelist == ['']:
-        whitelist[:] = featureList
-    invalidFeatures = [feature for feature in whitelist if feature not in featureList]
-    if invalidFeatures:
-        raise ValueError(f"Error: Invalid feature(s) in whitelist: {invalidFeatures}")
 
 keyboardFeatures = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -95,162 +46,152 @@ gamepadFeatures = [
     'LEFT_SHOULDER', 'RIGHT_SHOULDER', 
     'A', 'B', 'X', 'Y', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY'
 ]
+scaler = MinMaxScaler()
 
-validate_whitelist(keyWhitelist, keyboardFeatures)
-validate_whitelist(mouseWhitelist, mouseFeatures)
-validate_whitelist(gamepadWhitelist, gamepadFeatures)
-if killKey in keyWhitelist:
-    raise ValueError(f"Error: killKey '{killKey}' cannot be in the whitelist")
+modelLayers = 2
+modelNeurons = 64
+windowSize = 10
+trainingEpochs = 50
+
+def BinaryLSTM(inputShape, layerCount, neuronCount):
+    model = keras.Sequential()
+    model.add(keras.Input(shape=inputShape))
+    for _ in range(0, layerCount):
+        model.add(keras.layers.LSTM(neuronCount, return_sequences=True))
+    model.add(keras.layers.Dense(1, activation='sigmoid'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    model.summary()
+    return model
+
+class Device:
+    def __init__(self, isCapturing, features, whitelist):
+        self.deviceType = ''
+        self.isCapturing = isCapturing
+        self.features = features
+        self.whitelist = whitelist
+        self.sequence = numpy.empty((windowSize, len(whitelist)))
+        self.confidenceList = []
+        if self.whitelist == ['']:
+            self.whitelist[:] = self.features
+        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
+        if invalidFeatures:
+            raise ValueError(f"Error: Invalid feature(s) in whitelist: {invalidFeatures}")
+        match programMode:
+            case 1:
+                self.model = BinaryLSTM((windowSize, len(whitelist)), modelLayers, modelNeurons)
+                self.xTrain = []
+                self.yTrain = []
+            case 2:
+                try:
+                    self.model = keras.saving.load_model(f'models/{self.deviceType}.keras')
+                except:
+                    print(f'No {self.deviceType} model found')
+
+    
+    def save_sequence(self, fileName):
+        os.makedirs('data', exist_ok=True)
+        with open(f'data/{fileName}.csv', 'ar', newline='') as file:
+            writer = csv.writer(file)
+            if file.readline() == '':
+                writer.writerow(self.features + ['dataClass'])
+            for state in self.sequence:
+                writer.writerow(state + [dataClass])
+
+class Keyboard(Device):
+    def __init__(self, isCapturing, features, whitelist):
+        super().__init__(isCapturing, features, whitelist)
+        self.deviceType = 'keyboard'
+        if killKey in self.whitelist:
+            raise ValueError(f"Error: killKey '{killKey}' cannot be in the whitelist")
+
+    def poll(self):
+        self.sequence.append([1 if keyboard.is_pressed(feature) else 0 for feature in self.features]) 
+
+class Mouse(Device):
+    def __init__(self, isCapturing, features, whitelist):
+        super().__init__(isCapturing, features, whitelist)
+        self.deviceType = 'mouse'
+
+    def poll(self):
+        state = [
+            1 if mouse.is_pressed(button='left') else 0,
+            1 if mouse.is_pressed(button='right') else 0,
+            1 if mouse.is_pressed(button='middle') else 0,
+        ]
+        state.extend(mouse.get_position())
+        self.sequence.append(state)
+
+class Gamepad(Device):
+    def __init__(self, isCapturing, features, whitelist, ID):
+        super().__init__(isCapturing, features, whitelist)
+        self.ID = ID
+        self.deviceType = 'gamepad'
+        if not XInput.get_connected()[self.ID]:
+            print('No gamepad detected')
+
+    def poll(self):
+        state = []
+        if XInput.get_connected()[0]:
+            state = [int(value) for value in XInput.get_button_values(XInput.get_state(0)).values()]
+            state.extend(XInput.get_trigger_values(XInput.get_state(0)))
+            thumbValues = XInput.get_thumb_values(XInput.get_state(0))
+            state.extend(thumbValues[0])
+            state.extend(thumbValues[1])
+        self.sequence.append(state)
+
+kb = Keyboard(captureKeyboard, keyboardFeatures, keyboardWhitelist)
+m = Mouse(captureMouse, mouseFeatures, mouseWhitelist)
+gp = Gamepad(captureGamepad, gamepadFeatures, gamepadWhitelist, 0)
+devices = (kb, m, gp)
 
 match programMode:
     ########## Data Collection ##########
     case 0:
-        keyboardSaveData = []
-        mouseSaveData = []
-        gamepadSaveData = []
-        def save_data():
-            global keyboardSaveData
-            global mouseSaveData
-            global gamepadSaveData
-            os.makedirs('data', exist_ok=True)
-            if captureKeyboard:
-                keyboardFile = open(f'data/keyboard{dataClass}Data.csv', 'a', newline='')
-                keyboardWriter = csv.writer(keyboardFile)
-                keyboardWriter.writerow(keyboardFeatures + ['dataClass'])
-            if captureMouse:
-                mouseFile = open(f'data/mouse{dataClass}Data.csv', 'a', newline='')
-                mouseWriter = csv.writer(mouseFile)
-                mouseWriter.writerow(mouseFeatures + ['dataClass'])
-            if captureGamepad:
-                gamepadFile = open(f'data/gamepad{dataClass}Data.csv', 'a', newline='')
-                gamepadWriter = csv.writer(gamepadFile)
-                gamepadWriter.writerow(gamepadFeatures + ['dataClass'])
-
-            while True:
-                time.sleep(saveInterval)
-                if keyboardSaveData:
-                    for row in keyboardSaveData:
-                        keyboardWriter.writerow(row)
-                    keyboardSaveData = []
-                if mouseSaveData:
-                    for row in mouseSaveData:
-                        mouseWriter.writerow(row)
-                    mouseSaveData = []
-                if gamepadSaveData:
-                    for row in gamepadSaveData:
-                        gamepadWriter.writerow(row)
-                    gamepadSaveData = []
-
-        threading.Thread(target=save_data, daemon=True).start()
-        if not XInput.get_connected()[0]:
-            print('No gamepad detected')
+        pollCounter = 0
         while True:
             time.sleep(pollInterval/1000)
+            pollCounter += 1
             if keyboard.is_pressed(killKey):
                 os._exit(0)
-            keyboardState, mouseState, gamepadState = poll_inputs()
-            if keyboardState:
-                keyboardState.append(dataClass)
-                keyboardSaveData.append(keyboardState)
-            if mouseState:
-                mouseState.append(dataClass)
-                mouseSaveData.append(mouseState)
-            if gamepadState:
-                gamepadState.append(dataClass)
-                gamepadSaveData.append(gamepadState)
-    
+            if pollCounter == saveInterval:
+                for device in devices:
+                    if device.isCapturing:
+                        device.save_sequence(f'{device.deviceType}{dataClass}')
+                pollCounter = 0
+            for device in devices:
+                if device.isCapturing:
+                    device.poll()
+
     ########## Model Training ##########
     case 1:
-        if captureKeyboard:
-            keyboardLSTM = BinaryLSTM(inputShape=(windowSize, len(keyWhitelist)))
-        if captureMouse:
-            mouseLSTM = BinaryLSTM(inputShape=(windowSize, len(mouseWhitelist)))
-        if captureGamepad:
-            gamepadLSTM = BinaryLSTM(inputShape=(windowSize, len(gamepadWhitelist)))
+        for device in devices:
+            for fileName in os.listdir("data"):
+                filePath = os.path.join("data", fileName)
+                if os.path.isfile(filePath) and fileName.endswith('.csv'):
+                    if fileName.startswith(device.deviceType):
+                        dataFrame = pandas.read_csv(filePath)
+                        dataMatrix = dataFrame[device.features + ['dataClass']].to_numpy()
+                        inputData = scaler.fit_transform(dataMatrix[:, :-1])
+                        knownClasses = dataMatrix[:, -1]
+                        for i in range(0, len(inputData), windowSize):
+                            inputSequence = inputData[i:i + windowSize]
+                            classSequence = knownClasses[i:i + windowSize]
+                            if len(inputSequence) == windowSize:
+                                    device.xTrain.append(inputSequence)
+                                    device.yTrain.append(classSequence)
+            os.makedirs('models', exist_ok=True)
+            if device.xTrain:
+                device.xTrain = numpy.array(device.xTrain)
+                device.yTrain = numpy.array(device.yTrain)
+                device.model.fit(device.xTrain, device.yTrain, epochs=trainingEpochs)
+                device.model.save('models/keyboard.keras')
 
-        keyboardX = []
-        keyboardY = []
-        mouseX = []
-        mouseY = []
-        gamepadX = []
-        gamepadY = []
-
-        for fileName in os.listdir("data"):
-            filePath = os.path.join("data", fileName)
-            if os.path.isfile(filePath) and fileName.endswith('.csv'):
-                inputType = 'keyboard'
-                if 'mouse' in fileName:
-                    inputType = 'mouse'
-                elif 'gamepad' in fileName:
-                    inputType = 'gamepad'
-                
-                dataFrame = pandas.read_csv(filePath)
-                dataMatrix = None
-                if inputType == 'keyboard':
-                    dataMatrix = dataFrame[keyWhitelist + ['dataClass']].to_numpy()
-                elif inputType == 'mouse':
-                    dataMatrix = dataFrame[mouseWhitelist + ['dataClass']].to_numpy()
-                elif inputType == 'gamepad':
-                    dataMatrix = dataFrame[gamepadWhitelist + ['dataClass']].to_numpy()
-                else:
-                    dataMatrix = dataFrame.to_numpy()
-                
-                inputData = scaler.fit_transform(dataMatrix[:, :-1]) # Shape error (4 features when should be 5)
-                knownClasses = dataMatrix[:, -1]
-                for i in range(0, len(inputData), windowSize):
-                    inputSequence = inputData[i:i + windowSize]
-                    classSequence = knownClasses[i:i + windowSize]
-
-                    if len(inputSequence) == windowSize:
-                        if inputType == 'keyboard':
-                            keyboardX.append(inputSequence)
-                            keyboardY.append(classSequence)
-                        elif inputType == 'mouse':
-                            mouseX.append(inputSequence)
-                            mouseY.append(classSequence)
-                        elif inputType == 'gamepad':
-                            gamepadX.append(inputSequence)
-                            gamepadY.append(classSequence)
-        
-        os.makedirs('models', exist_ok=True)
-
-        if keyboardX:
-            keyboardX = numpy.array(keyboardX)
-            keyboardY = numpy.array(keyboardY)
-            keyboardLSTM.fit(keyboardX, keyboardY, epochs=trainingEpochs)
-            keyboardLSTM.save('models/keyboard.keras')
-        if mouseX:
-            mouseX = numpy.array(mouseX)
-            mouseY = numpy.array(mouseY)
-            mouseLSTM.fit(mouseX, mouseY, epochs=trainingEpochs)
-            mouseLSTM.save('models/mouse.keras')
-        if gamepadX:
-            gamepadX = numpy.array(gamepadX)
-            gamepadY = numpy.array(gamepadY)
-            gamepadLSTM.fit(gamepadX, gamepadY, epochs=trainingEpochs)
-            gamepadLSTM.save('models/gamepad.keras')
-        
     ########## Live Analysis ##########
     case 2: 
         modelLoaded = False
-        if captureKeyboard:
-            try:
-                keyboardLSTM = keras.saving.load_model('models/keyboard.keras')
+        for device in devices:
+            if device.model:
                 modelLoaded = True
-            except:
-                print('No keyboard model found')
-        if captureMouse:
-            try:
-                mouseLSTM = keras.saving.load_model('models/mouse.keras')
-                modelLoaded = True
-            except:
-                print('No mouse model found')
-        if captureGamepad:
-            try:
-                gamepadLSTM = keras.saving.load_model('models/gamepad.keras')
-                modelLoaded = True
-            except:
-                print('No gamepad model found')
         if not modelLoaded:
             print('Error: No models were found. Exiting...')
             os.exit(0)
@@ -258,29 +199,14 @@ match programMode:
         plt.ioff()
         plt.figure()
 
-        keyboardData = numpy.empty((windowSize, len(keyWhitelist)))
-        mouseData = numpy.empty((windowSize, len(mouseWhitelist)))
-        gamepadData = numpy.empty((windowSize, len(gamepadFeatures)))
-        keyboardIndex = 0
-        mouseIndex = 0
-        gamepadIndex = 0
-        keyboardConfidence = 0
-        keyboardConfidenceList = []
-        mouseConfidence = 0
-        mouseConfidenceList = []
-        gamepadConfidence = 0
-        gamepadConfidenceList = []
-        averageConfidence = 0
-
         while True: # Or while the game is running
             time.sleep(pollInterval / 1000)
             
             if keyboard.is_pressed(killKey):
                 os.makedirs('reports', exist_ok=True)
                 plt.clf()
-                plt.plot(keyboardConfidenceList, label='Keyboard Confidence', color='blue')
-                plt.plot(mouseConfidenceList, label='Mouse Confidence', color='green')
-                plt.plot(gamepadConfidenceList, label='Gamepad Confidence', color='red')
+                for device in devices:
+                    plt.plot(device.confidenceList, label=f'{device.deviceType} confidence')
                 plt.xlabel('Window')
                 plt.ylabel('Confidence')
                 plt.title('Confidence Over Time')
@@ -288,38 +214,10 @@ match programMode:
                 plt.savefig('reports/confidence_graph.png')
                 os._exit(0)
             
-            keyboardState, mouseState, gamepadState = poll_inputs()
-            if keyboardState:
-                keyboardData[keyboardIndex % windowSize] = keyboardState
-            if mouseState:
-                mouseData[mouseIndex % windowSize] = mouseState
-            if gamepadState:
-                gamepadData[gamepadIndex % windowSize] = gamepadState
-
-            keyboardIndex += 1
-            mouseIndex += 1
-            gamepadIndex += 1
-
-            if captureKeyboard:
-                if keyboardIndex >= windowSize:
-                    inputData = scaler.fit_transform(keyboardData)
-                    keyboardConfidence = keyboardLSTM.predict(inputData[None, ...])[0][1][0]
-                    keyboardConfidenceList.append(keyboardConfidence)
-                    keyboardIndex = 0
-                    print(f'Keyboard Confidence: {keyboardConfidence:.4f}')
-            
-            if captureMouse:
-                if mouseIndex >= windowSize:
-                    inputData = scaler.fit_transform(mouseData)
-                    mouseConfidence = mouseLSTM.predict(inputData[None, ...])[0][1][0]
-                    mouseConfidenceList.append(mouseConfidence)
-                    mouseIndex = 0
-                    print(f'Mouse Confidence: {mouseConfidence:.4f}')
-
-            if captureGamepad:
-                if gamepadIndex >= windowSize:
-                    inputData = scaler.fit_transform(gamepadData)
-                    gamepadConfidence = gamepadLSTM.predict(inputData[None, ...])[0][1][0]
-                    gamepadConfidenceList.append(gamepadConfidence)
-                    gamepadIndex = 0
-                    print(f'Gamepad Confidence: {gamepadConfidence:.4f}')
+            for device in devices:
+                if device.isCapturing:
+                    device.poll()
+                    if len(device.sequence) == windowSize:
+                        inputData = scaler.fit_transform(device.sequence)
+                        device.confidenceList.append(device.model.predict(inputData[None, ...])[0][1][0])
+                        device.sequence = []
