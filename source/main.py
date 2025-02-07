@@ -21,9 +21,9 @@ killKey =           str(config['General']['killKey'])         # key to close pro
 dataClass =         int(config['Collection']['dataClass'])    # target classes (0 = legit, 1 = cheats)
 saveInterval =      int(config['Collection']['saveInterval']) # number of polls before save
 pollInterval =    float(config['Tuning']['pollInterval'])     # time between state polls in milliseconds
-keyboardWhitelist = str(config['Tuning']['keyboardWhitelist']).split(',')     # keyboard features to include (all options in keyboardFeatures)
-mouseWhitelist =    str(config['Tuning']['mouseWhitelist']).split(',')   # mouse features to include (all options in mouseFeatures)
-gamepadWhitelist =  str(config['Tuning']['gamepadWhitelist']).split(',') # gamepad features to include (all options in gamepadFeatures)
+keyboardWhitelist = str(config['Tuning']['keyboardWhitelist']).split(',') # keyboard features to include (all options in keyboardFeatures)
+mouseWhitelist =    str(config['Tuning']['mouseWhitelist']).split(',')    # mouse features to include (all options in mouseFeatures)
+gamepadWhitelist =  str(config['Tuning']['gamepadWhitelist']).split(',')  # gamepad features to include (all options in gamepadFeatures)
 
 keyboardFeatures = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -69,16 +69,16 @@ class Device:
         self.isCapturing = isCapturing
         self.features = features
         self.whitelist = whitelist
-        self.sequence = numpy.empty((windowSize, len(whitelist)))
+        self.sequence = []
         self.confidenceList = []
         if self.whitelist == ['']:
-            self.whitelist[:] = self.features
+            self.whitelist = self.features
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
         if invalidFeatures:
             raise ValueError(f"Error: Invalid feature(s) in whitelist: {invalidFeatures}")
         match programMode:
             case 1:
-                self.model = BinaryLSTM((windowSize, len(whitelist)), modelLayers, modelNeurons)
+                self.model = BinaryLSTM((windowSize, len(self.whitelist)), modelLayers, modelNeurons)
                 self.xTrain = []
                 self.yTrain = []
             case 2:
@@ -90,22 +90,26 @@ class Device:
     
     def save_sequence(self, fileName):
         os.makedirs('data', exist_ok=True)
-        with open(f'data/{fileName}.csv', 'ar', newline='') as file:
+        with open(f'data/{fileName}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
-            if file.readline() == '':
+            if os.stat(f'data/{fileName}.csv').st_size == 0:
                 writer.writerow(self.features + ['dataClass'])
             for state in self.sequence:
                 writer.writerow(state + [dataClass])
+
+    def get_confidence(self):
+        self.confidenceList.append(self.model.predict(inputData[None, ...])[0][1][0])
 
 class Keyboard(Device):
     def __init__(self, isCapturing, features, whitelist):
         super().__init__(isCapturing, features, whitelist)
         self.deviceType = 'keyboard'
         if killKey in self.whitelist:
-            raise ValueError(f"Error: killKey '{killKey}' cannot be in the whitelist")
+            raise ValueError(f"Error: Kill key '{killKey}' cannot be in the whitelist")
 
     def poll(self):
-        self.sequence.append([1 if keyboard.is_pressed(feature) else 0 for feature in self.features]) 
+        state = [1 if keyboard.is_pressed(feature) else 0 for feature in self.features]
+        self.sequence.append(state)
 
 class Mouse(Device):
     def __init__(self, isCapturing, features, whitelist):
@@ -137,7 +141,7 @@ class Gamepad(Device):
             thumbValues = XInput.get_thumb_values(XInput.get_state(0))
             state.extend(thumbValues[0])
             state.extend(thumbValues[1])
-        self.sequence.append(state)
+            self.sequence.append(state)
 
 kb = Keyboard(captureKeyboard, keyboardFeatures, keyboardWhitelist)
 m = Mouse(captureMouse, mouseFeatures, mouseWhitelist)
@@ -218,6 +222,6 @@ match programMode:
                 if device.isCapturing:
                     device.poll()
                     if len(device.sequence) == windowSize:
-                        inputData = scaler.fit_transform(device.sequence)
-                        device.confidenceList.append(device.model.predict(inputData[None, ...])[0][1][0])
+                        inputData = scaler.fit_transform(numpy.array(device.sequence))
+                        device.get_confidence()
                         device.sequence = []
