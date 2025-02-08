@@ -11,9 +11,9 @@ import time
 import csv
 import os
 
+scaler = MinMaxScaler()
 config = configparser.ConfigParser()
 config.read('config.ini')
-
 programMode =       int(config['General']['programMode'])     # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
 pollInterval =    float(config['General']['pollInterval'])    # time between state polls in milliseconds            (tune)
 windowSize =        int(config['General']['windowSize'])      # size of input window for the model                  (tune)
@@ -30,29 +30,6 @@ modelLayers =       int(config['Training']['modelLayers'])    # number of LSTM l
 modelNeurons =      int(config['Training']['modelNeurons'])   # number of neurons in each LSTM layer                (tune)
 trainingEpochs =    int(config['Training']['trainingEpochs']) # number of training epochs                           (tune)
 
-keyboardFeatures = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    '+', '-', '*', '/', '.', ',', '<', '>', '?', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '"', "'", '`', '~',
-    'enter', 'esc', 'backspace', 'tab', 'space',
-    'caps lock', 'num lock', 'scroll lock',
-    'home', 'end', 'page up', 'page down', 'insert', 'delete',
-    'left', 'right', 'up', 'down',
-    'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
-    'print screen', 'pause', 'break', 'windows', 'menu',
-    'right alt', 'ctrl', 'left shift', 'right shift', 'left windows', 'left alt', 'right windows', 'alt gr', 'windows', 'alt', 'shift', 'right ctrl', 'left ctrl'
-]
-mouseFeatures = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseX', 'mouseY']
-gamepadFeatures = [
-    'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT', 
-    'START', 'BACK', 
-    'LEFT_THUMB', 'RIGHT_THUMB', 
-    'LEFT_SHOULDER', 'RIGHT_SHOULDER', 
-    'A', 'B', 'X', 'Y', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY'
-]
-scaler = MinMaxScaler()
-
 def BinaryLSTM(inputShape, layerCount, neuronCount):
     model = keras.Sequential()
     model.add(keras.Input(shape=inputShape))
@@ -64,10 +41,10 @@ def BinaryLSTM(inputShape, layerCount, neuronCount):
     return model
 
 class Device:
-    def __init__(self, isCapturing, features, whitelist):
+    def __init__(self, isCapturing, whitelist):
         self.deviceType = ''
         self.isCapturing = isCapturing
-        self.features = features
+        self.features = None
         self.whitelist = whitelist
         self.sequence = []
         self.confidenceList = []
@@ -91,8 +68,21 @@ class Device:
         self.confidenceList.append(self.model.predict(inputData[None, ...])[0][1][0])
 
 class Keyboard(Device):
-    def __init__(self, isCapturing, features, whitelist):
-        super().__init__(isCapturing, features, whitelist)
+    def __init__(self, isCapturing, whitelist):
+        super().__init__(isCapturing, whitelist)
+        self.features = [
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+            'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+            '+', '-', '*', '/', '.', ',', '<', '>', '?', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '"', "'", '`', '~',
+            'enter', 'esc', 'backspace', 'tab', 'space',
+            'caps lock', 'num lock', 'scroll lock',
+            'home', 'end', 'page up', 'page down', 'insert', 'delete',
+            'left', 'right', 'up', 'down',
+            'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
+            'print screen', 'pause', 'break', 'windows', 'menu',
+            'right alt', 'ctrl', 'left shift', 'right shift', 'left windows', 'left alt', 'right windows', 'alt gr', 'windows', 'alt', 'shift', 'right ctrl', 'left ctrl'
+        ]
         self.deviceType = 'keyboard'
         if killKey in self.whitelist:
             raise ValueError(f"Error: Kill key '{killKey}' cannot be in the whitelist")
@@ -102,9 +92,10 @@ class Keyboard(Device):
         self.sequence.append(state)
 
 class Mouse(Device):
-    def __init__(self, isCapturing, features, whitelist):
-        super().__init__(isCapturing, features, whitelist)
+    def __init__(self, isCapturing, whitelist):
+        super().__init__(isCapturing, whitelist)
         self.deviceType = 'mouse'
+        self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseX', 'mouseY']
 
     def poll(self):
         state = [
@@ -116,9 +107,16 @@ class Mouse(Device):
         self.sequence.append(state)
 
 class Gamepad(Device):
-    def __init__(self, isCapturing, features, whitelist):
-        super().__init__(isCapturing, features, whitelist)
+    def __init__(self, isCapturing, whitelist):
+        super().__init__(isCapturing, whitelist)
         self.deviceType = 'gamepad'
+        self.features = [
+            'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT', 
+            'START', 'BACK', 
+            'LEFT_THUMB', 'RIGHT_THUMB', 
+            'LEFT_SHOULDER', 'RIGHT_SHOULDER', 
+            'A', 'B', 'X', 'Y', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY'
+        ]
         if not XInput.get_connected()[0]:
             print('No gamepad detected')
 
@@ -133,9 +131,9 @@ class Gamepad(Device):
             self.sequence.append(state)
 
 devices = (
-    Keyboard(captureKeyboard, keyboardFeatures, keyboardWhitelist),
-    Mouse(captureMouse, mouseFeatures, mouseWhitelist),
-    Gamepad(captureGamepad, gamepadFeatures, gamepadWhitelist)
+    Keyboard(captureKeyboard, keyboardWhitelist),
+    Mouse(captureMouse, mouseWhitelist),
+    Gamepad(captureGamepad, gamepadWhitelist)
 )
 
 match programMode:
