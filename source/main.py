@@ -13,17 +13,22 @@ import os
 
 config = configparser.ConfigParser()
 config.read('config.ini')
+
 programMode =       int(config['General']['programMode'])     # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
+pollInterval =    float(config['General']['pollInterval'])    # time between state polls in milliseconds            (tune)
+windowSize =        int(config['General']['windowSize'])      # size of input window for the model                  (tune)
 captureKeyboard =   int(config['General']['captureKeyboard']) # toggle for keyboard capture
 captureMouse =      int(config['General']['captureMouse'])    # toggle for mouse capture
 captureGamepad =    int(config['General']['captureGamepad'])  # toggle for gamepad capture
+keyboardWhitelist = str(config['General']['keyboardWhitelist']).split(',') # keyboard features to include           (tune)
+mouseWhitelist =    str(config['General']['mouseWhitelist']).split(',')    # mouse features to include              (tune)
+gamepadWhitelist =  str(config['General']['gamepadWhitelist']).split(',')  # gamepad features to include            (tune)
 killKey =           str(config['General']['killKey'])         # key to close program
-dataClass =         int(config['Collection']['dataClass'])    # target classes (0 = legit, 1 = cheats)
+dataClass =         int(config['Collection']['dataClass'])    # target classes                 (0 = control, 1 = cheating)
 saveInterval =      int(config['Collection']['saveInterval']) # number of polls before save
-pollInterval =    float(config['Tuning']['pollInterval'])     # time between state polls in milliseconds
-keyboardWhitelist = str(config['Tuning']['keyboardWhitelist']).split(',') # keyboard features to include (all options in keyboardFeatures)
-mouseWhitelist =    str(config['Tuning']['mouseWhitelist']).split(',')    # mouse features to include (all options in mouseFeatures)
-gamepadWhitelist =  str(config['Tuning']['gamepadWhitelist']).split(',')  # gamepad features to include (all options in gamepadFeatures)
+modelLayers =       int(config['Training']['modelLayers'])    # number of LSTM layers                               (tune)
+modelNeurons =      int(config['Training']['modelNeurons'])   # number of neurons in each LSTM layer                (tune)
+trainingEpochs =    int(config['Training']['trainingEpochs']) # number of training epochs                           (tune)
 
 keyboardFeatures = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -48,11 +53,6 @@ gamepadFeatures = [
 ]
 scaler = MinMaxScaler()
 
-modelLayers = 2
-modelNeurons = 64
-windowSize = 20
-trainingEpochs = 50
-
 def BinaryLSTM(inputShape, layerCount, neuronCount):
     model = keras.Sequential()
     model.add(keras.Input(shape=inputShape))
@@ -72,28 +72,17 @@ class Device:
         self.sequence = []
         self.confidenceList = []
         self.model = None
-        self.xTrain = []
-        self.yTrain = []
         if self.whitelist == ['']:
             self.whitelist = self.features
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
         if invalidFeatures:
             raise ValueError(f"Error: Invalid feature(s) in whitelist: {invalidFeatures}")
-        
-    def create_model(self):
-        self.model = BinaryLSTM((windowSize, len(self.whitelist)), modelLayers, modelNeurons)
     
-    def load_model(self, path):
-        try:
-            self.model = keras.saving.load_model(path)
-        except:
-            print(f'No {self.deviceType} model found')
-    
-    def save_sequence(self, fileName):
+    def save_sequence(self):
         os.makedirs('data', exist_ok=True)
-        with open(f'data/{fileName}.csv', 'a', newline='') as file:
+        with open(f'data/{device.deviceType}{dataClass}.csv', 'a', newline='') as file:
             writer = csv.writer(file)
-            if os.stat(f'data/{fileName}.csv').st_size == 0:
+            if os.stat(f'data/{device.deviceType}{dataClass}.csv').st_size == 0:
                 writer.writerow(self.features + ['dataClass'])
             for state in self.sequence:
                 writer.writerow(state + [dataClass])
@@ -127,11 +116,10 @@ class Mouse(Device):
         self.sequence.append(state)
 
 class Gamepad(Device):
-    def __init__(self, isCapturing, features, whitelist, ID):
+    def __init__(self, isCapturing, features, whitelist):
         super().__init__(isCapturing, features, whitelist)
-        self.ID = ID
         self.deviceType = 'gamepad'
-        if not XInput.get_connected()[self.ID]:
+        if not XInput.get_connected()[0]:
             print('No gamepad detected')
 
     def poll(self):
@@ -144,10 +132,11 @@ class Gamepad(Device):
             state.extend(thumbValues[1])
             self.sequence.append(state)
 
-kb = Keyboard(captureKeyboard, keyboardFeatures, keyboardWhitelist)
-m = Mouse(captureMouse, mouseFeatures, mouseWhitelist)
-gp = Gamepad(captureGamepad, gamepadFeatures, gamepadWhitelist, 0)
-devices = (kb, m, gp)
+devices = (
+    Keyboard(captureKeyboard, keyboardFeatures, keyboardWhitelist),
+    Mouse(captureMouse, mouseFeatures, mouseWhitelist),
+    Gamepad(captureGamepad, gamepadFeatures, gamepadWhitelist)
+)
 
 match programMode:
     ########## Data Collection ##########
@@ -161,7 +150,7 @@ match programMode:
             if pollCounter == saveInterval:
                 for device in devices:
                     if device.isCapturing:
-                        device.save_sequence(f'{device.deviceType}{dataClass}')
+                        device.save_sequence()
                 pollCounter = 0
             for device in devices:
                 if device.isCapturing:
@@ -170,6 +159,7 @@ match programMode:
     ########## Model Training ##########
     case 1:
         for device in devices:
+            x, y = [], []
             for fileName in os.listdir("data"):
                 filePath = os.path.join("data", fileName)
                 if os.path.isfile(filePath) and fileName.endswith('.csv'):
@@ -182,23 +172,25 @@ match programMode:
                             inputSequence = inputData[i:i + windowSize]
                             classSequence = knownClasses[i:i + windowSize]
                             if len(inputSequence) == windowSize:
-                                    device.xTrain.append(inputSequence)
-                                    device.yTrain.append(classSequence)
+                                    x.append(inputSequence)
+                                    y.append(classSequence)
             os.makedirs('models', exist_ok=True)
-            if device.xTrain:
-                device.xTrain = numpy.array(device.xTrain)
-                device.yTrain = numpy.array(device.yTrain)
-                device.create_model()
-                device.model.fit(device.xTrain, device.yTrain, epochs=trainingEpochs)
+            if x:
+                x = numpy.array(x)
+                y = numpy.array(y)
+                device.model = BinaryLSTM((windowSize, len(device.whitelist)), modelLayers, modelNeurons)
+                device.model.fit(x, y, validation_split=0.2, epochs=trainingEpochs)
                 device.model.save(f'models/{device.deviceType}.keras')
 
     ########## Live Analysis ##########
     case 2: 
         modelLoaded = False
         for device in devices:
-            device.load_model(f'models/{device.deviceType}.keras')
-            if device.model:
+            try:
+                device.model = keras.saving.load_model(f'models/{device.deviceType}.keras')
                 modelLoaded = True
+            except:
+                print(f'No {device.deviceType} model found')
         if not modelLoaded:
             print('Error: No models were found. Exiting...')
             os.exit(0)
