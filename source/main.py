@@ -3,12 +3,14 @@ import matplotlib.pyplot as plt
 import configparser
 import keras_tuner
 import threading
+import pyautogui
 import keyboard
 import pandas
 import XInput
 import mouse
 import keras
 import numpy
+import math
 import time
 import csv
 import os
@@ -72,12 +74,16 @@ class Mouse(Device):
     def __init__(self, isCapturing, whitelist):
         super().__init__(isCapturing, whitelist)
         self.deviceType = 'mouse'
-        self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseX', 'mouseY']
+        self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseAngle', 'mouseMagnitude']
         if self.whitelist == ['']:
             self.whitelist = self.features
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
         if invalidFeatures:
             raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
+        
+        self.last_position = None
+        self.screen_width, self.screen_height = pyautogui.size()
+        self.scale = min(self.screen_width, self.screen_height)
     
     def poll(self):
         state = [
@@ -85,7 +91,19 @@ class Mouse(Device):
             1 if mouse.is_pressed(button='right') else 0,
             1 if mouse.is_pressed(button='middle') else 0,
         ]
-        state.extend(mouse.get_position())
+        current_position = mouse.get_position()
+        if self.last_position is not None:
+            dx = current_position[0] - self.last_position[0]
+            dy = current_position[1] - self.last_position[1]
+            dx_norm = dx / self.scale
+            dy_norm = dy / self.scale
+            normalized_magnitude = math.hypot(dx_norm, dy_norm)
+            normalized_angle = math.atan2(dy_norm, dx_norm)
+        else:
+            normalized_angle = 0
+            normalized_magnitude = 0
+        state.extend([normalized_angle, normalized_magnitude])
+        self.last_position = current_position
         self.sequence.append(state)
 
 class Gamepad(Device):
