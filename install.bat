@@ -3,7 +3,6 @@ setlocal
 
 set PYTHON_VERSION=3.11.9
 set PYTHON_INSTALLER=python-3.11.9-amd64.exe
-set REPO_URL=https://github.com/Beanthief/PurePlay-Anti-Cheat
 
 echo Checking if Python %PYTHON_VERSION% is installed...
 python --version 2>nul | findstr /r /c:"Python %PYTHON_VERSION%" >nul
@@ -22,8 +21,12 @@ if errorlevel 1 (
     echo Python %PYTHON_VERSION% is already installed.
 )
 
-echo Creating virtual environment...
-python -m venv venv
+if exist venv (
+    echo Virtual environment already exists. Activating...
+) else (
+    echo Creating virtual environment...
+    python -m venv venv
+)
 
 call venv\Scripts\activate
 
