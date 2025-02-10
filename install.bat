@@ -1,38 +1,43 @@
 @echo off
-setlocal
+set "installer_url=https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe"
+set "installer_path=%USERPROFILE%\Downloads\Miniforge3-latest-Windows-x86_64.exe"
 
-set PYTHON_VERSION=3.11.9
-set PYTHON_INSTALLER=python-3.11.9-amd64.exe
-
-echo Checking if Python %PYTHON_VERSION% is installed...
-python --version 2>nul | findstr /r /c:"Python %PYTHON_VERSION%" >nul
+where conda >nul 2>&1
 if errorlevel 1 (
-    echo Python %PYTHON_VERSION% is not installed.
-    echo Downloading Python %PYTHON_VERSION%...
-    curl -LO https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER%
-
-    echo The Python installer has been downloaded.
-    echo The installer can be found at: %cd%\%PYTHON_INSTALLER% 
-    echo Please run the installer, ensure Python is added to PATH, then re-run this script.
-    endlocal
+    echo Downloading the latest Miniforge installer...
+    echo Installer URL: %installer_url%
+    echo Installer Path: %installer_path%
+    powershell -Command "Invoke-WebRequest -Uri '%installer_url%' -OutFile '%installer_path%'"
+    if errorlevel 1 (
+        echo Failed to download the installer.
+        pause
+        exit /b
+    )
+    echo Running the installer. Please follow the prompts to install Miniforge.
+    echo After installation, please restart this script.
+    start "" "%installer_path%"
     pause
-    exit
-) else (
-    echo Python %PYTHON_VERSION% is already installed.
+    exit /b
 )
 
-if exist venv (
-    echo Virtual environment already exists. Activating...
-) else (
-    echo Creating virtual environment...
-    python -m venv venv
+echo Creating conda environment...
+call conda create -n PurePlay-Anti-Cheat -y cudatoolkit cudnn
+if errorlevel 1 (
+    echo Failed to create the environment.
+    pause
+    exit /b
 )
 
-call venv\Scripts\activate
+echo Activating environment...
+call conda activate PurePlay-Anti-Cheat
 
-echo Installing dependencies...
-pip install -r requirements.txt
+echo Installing pip packages...
+pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib tensorflow pyautogui
+if errorlevel 1 (
+    echo Failed to install pip packages.
+    pause
+    exit /b
+)
 
-echo Setup complete!
-endlocal
+echo Run start.bat to begin!
 pause

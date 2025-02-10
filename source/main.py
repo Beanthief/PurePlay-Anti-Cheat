@@ -2,13 +2,13 @@ from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import configparser
 import keras_tuner
+import tensorflow
 import threading
 import pyautogui
 import keyboard
 import pandas
 import XInput
 import mouse
-import keras
 import numpy
 import math
 import time
@@ -31,6 +31,11 @@ trainingEpochs =    int(config['Model']['trainingEpochs'])    # number of epochs
 keyboardWhitelist = str(config['Model']['keyboardWhitelist']).split(',') # keyboard features to include
 mouseWhitelist =    str(config['Model']['mouseWhitelist']).split(',')    # mouse features to include
 gamepadWhitelist =  str(config['Model']['gamepadWhitelist']).split(',')  # gamepad features to include
+
+if tensorflow.test.gpu_device_name():
+    print('GPU found')
+else:
+    print('No GPU found')
 
 class Device:
     def __init__(self, isCapturing, whitelist):
@@ -173,7 +178,7 @@ match programMode:
 
     ########## Model Training ##########
     case 1:
-        class KillKeyCallback(keras.callbacks.Callback):
+        class KillKeyCallback(tensorflow.keras.callbacks.Callback):
             def on_epoch_end(self, epoch, logs=None):
                 if keyboard.is_pressed(killKey):
                     print('Kill key pressed. Stopping training.')
@@ -204,25 +209,25 @@ match programMode:
                 if os.path.exists(modelPath):
                     print(f'Training pre-existing model for {device.deviceType}.')
                     try:
-                        model = keras.models.load_model(modelPath)
+                        model = tensorflow.keras.models.load_model(modelPath)
                         model.fit(x, y, validation_split=0.2, epochs=trainingEpochs, callbacks=[KillKeyCallback()])
                     except KeyboardInterrupt:
                         print('Training interrupted by kill key during fine-tuning.')
                     device.model = model
                 else:
                     def build_model(hp):
-                        model = keras.Sequential()
-                        model.add(keras.Input(shape=(windowSize, len(device.whitelist))))
+                        model = tensorflow.keras.Sequential()
+                        model.add(tensorflow.keras.Input(shape=(windowSize, len(device.whitelist))))
                         layers = hp.Int('modelLayers', min_value=1, max_value=4, step=1)
                         neurons = hp.Int('modelNeurons', min_value=16, max_value=128, step=16)
                         learningRate = hp.Float('learningRate', min_value=0.0001, max_value=0.01, sampling='log')
                         for _ in range(layers - 1):
-                            model.add(keras.layers.LSTM(neurons, return_sequences=True))
-                        model.add(keras.layers.LSTM(neurons))
-                        model.add(keras.layers.Dense(1, activation='sigmoid'))
+                            model.add(tensorflow.keras.layers.LSTM(neurons, return_sequences=True))
+                        model.add(tensorflow.keras.layers.LSTM(neurons))
+                        model.add(tensorflow.keras.layers.Dense(1, activation='sigmoid'))
                         model.compile(
                             loss='binary_crossentropy',
-                            optimizer=keras.optimizers.Adam(learningRate),
+                            optimizer=tensorflow.keras.optimizers.Adam(learningRate),
                             metrics=['accuracy']
                         )
                         return model
@@ -245,7 +250,7 @@ match programMode:
         modelLoaded = False
         for device in devices:
             try:
-                device.model = keras.models.load_model(f'models/{device.deviceType}.keras')
+                device.model = tensorflow.keras.models.load_model(f'models/{device.deviceType}.keras')
                 modelLoaded = True
             except Exception as e:
                 print(f'No {device.deviceType} model found: {e}')

@@ -1,11 +1,9 @@
 @echo off
-
-IF NOT EXIST "venv" (
-    echo Error: Virtual environment not found. Please run deploy.bat to install required packages.
+call conda activate PurePlay-Anti-Cheat
+if errorlevel 1 (
+    echo No environment found. Please run install.bat first.
     pause
     exit /b
 )
-
-call venv\Scripts\activate
 python source\main.py
 pause
