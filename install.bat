@@ -32,7 +32,7 @@ echo Activating environment...
 call conda activate PurePlay-Anti-Cheat
 
 echo Installing pip packages...
-pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib tensorflow pyautogui
+pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui torch
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause
