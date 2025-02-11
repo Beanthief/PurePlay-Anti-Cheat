@@ -19,22 +19,24 @@ import os
 
 configParser = configparser.ConfigParser()
 configParser.read('config.ini')
-programMode =        int(configParser['General']['programMode'])      # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
-captureKeyboard =    int(configParser['General']['captureKeyboard'])  # toggle for keyboard capture
-captureMouse =       int(configParser['General']['captureMouse'])     # toggle for mouse capture
-captureGamepad =     int(configParser['General']['captureGamepad'])   # toggle for gamepad capture
-anomalyThreshold = float(configParser['General']['anomalyThreshold']) # detection threshold for anomalies
-killKey =            str(configParser['General']['killKey'])          # key to close program
-saveInterval =       int(configParser['Collection']['saveInterval'])  # number of polls before save
-pollInterval =       int(configParser['Collection']['pollInterval'])  # time between state polls in milliseconds
-layerCount =         int(configParser['Model']['layerCount'])         # number of LSTM layers in the model
-neuronCount =        int(configParser['Model']['neuronCount'])        # number of neurons in each LSTM layer
-learningRate =     float(configParser['Model']['learningRate'])       # learning rate for the model
-windowSize =         int(configParser['Model']['windowSize'])         # size of input window for the model
-trainingEpochs =     int(configParser['Model']['trainingEpochs'])     # number of epochs for each training cycle
-keyboardWhitelist =  str(configParser['Model']['keyboardWhitelist']).split(',') # features to capture for keyboard
-mouseWhitelist =     str(configParser['Model']['mouseWhitelist']).split(',')    # features to capture for mouse
-gamepadWhitelist =   str(configParser['Model']['gamepadWhitelist']).split(',')  # features to capture for gamepad
+
+# General configurations
+programMode =        int(configParser['General']['programMode'])     # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
+pollInterval =       int(configParser['General']['pollInterval'])    # time between polls in milliseconds (used for collection and analysis)
+captureKeyboard =    int(configParser['General']['captureKeyboard']) # toggle for keyboard capture
+captureMouse =       int(configParser['General']['captureMouse'])    # toggle for mouse capture
+captureGamepad =     int(configParser['General']['captureGamepad'])  # toggle for gamepad capture
+killKey =            str(configParser['General']['killKey'])         # key to close program                 (cannot be in keyboardWhitelist)
+
+# Model configurations (will be overwritten by model metadata if available)
+windowSize =         int(configParser['Model']['windowSize'])     # size of input sequences for training
+layerCount =         int(configParser['Model']['layerCount'])     # number of LSTM layers in the model
+neuronCount =        int(configParser['Model']['neuronCount'])    # number of neurons in each LSTM layer
+learningRate =     float(configParser['Model']['learningRate'])   # learning rate for the model
+trainingEpochs =     int(configParser['Model']['trainingEpochs']) # number of epochs for each training cycle
+keyboardWhitelist =  str(configParser['Model']['keyboardWhitelist']).split(',') #
+mouseWhitelist =     str(configParser['Model']['mouseWhitelist']).split(',')    # features to train on                (empty = all features)
+gamepadWhitelist =   str(configParser['Model']['gamepadWhitelist']).split(',')  #
 
 # ------------------------
 # Device Classes
@@ -47,7 +49,7 @@ class Device:
         self.isCapturing = isCapturing
         self.whitelist = whitelist
         self.sequence = []
-        self.confidenceHistory = []
+        self.anomalyHistory = []
         self.model = None
 
 class Keyboard(Device):
@@ -208,13 +210,12 @@ def scale_data(data, featureRange=(0, 1)):
 # Program Control
 # ------------------------
 
-if programMode != 1:
-    killEvent = threading.Event()
-    def kill_callback():
-        if not killEvent.is_set():
-            print("Kill key pressed. Saving and closing.")
-            killEvent.set()
-    keyboard.add_hotkey(killKey, kill_callback)
+killEvent = threading.Event()
+def kill_callback():
+    if not killEvent.is_set():
+        print("Kill key pressed. Saving and closing.")
+        killEvent.set()
+keyboard.add_hotkey(killKey, kill_callback)
 
 # ------------------------
 # Program Modes
@@ -224,19 +225,21 @@ if programMode != 1:
 if programMode == 0:
     def saveSequence(device, filePath):
         os.makedirs('data', exist_ok=True)
-        
-        if not os.path.isfile(filePath):
-            with open(filePath, 'w', newline='') as fileHandle:
+        with device.saveLock:
+            if not os.path.isfile(filePath):
+                with open(filePath, 'w', newline='') as fileHandle:
+                    writer = csv.writer(fileHandle)
+                    writer.writerow(device.features)
+            with open(filePath, 'a', newline='') as fileHandle:
                 writer = csv.writer(fileHandle)
-                writer.writerow(device.features)
-        with open(filePath, 'a', newline='') as fileHandle:
-            writer = csv.writer(fileHandle)
-            for state in device.sequence:
-                writer.writerow(state)
-        device.sequence = []
+                for state in device.sequence:
+                    writer.writerow(state)
+            device.sequence = []
 
     for device in devices:
         device.dataPath = f'data/{device.deviceType}_{time.strftime("%Y%m%d-%H%M%S")}.csv'
+        device.saveLock = threading.Lock()
+
     pollCounter = 0
     while not killEvent.is_set():
         time.sleep(pollInterval / 1000)
@@ -244,7 +247,7 @@ if programMode == 0:
         for device in devices:
             if device.isCapturing:
                 device.poll()
-        if pollCounter == saveInterval:
+        if pollCounter == (2 * 1000) // pollInterval: # Save every 2 seconds
             for device in devices:
                 if device.isCapturing:
                     threading.Thread(target=saveSequence, args=(device, device.dataPath)).start()
@@ -286,49 +289,28 @@ elif programMode == 1:
             lossFunction = torch.nn.MSELoss()
             optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
 
-            deviceInterrupted = False
             for epoch in range(trainingEpochs):
-                if keyboard.is_pressed(killKey):
-                    print(f"Kill key pressed. Saving and closing current training session for {device.deviceType}.")
-                    deviceInterrupted = True
-                    break
-
                 model.train()
                 totalTrainLoss = 0.0
                 for inputBatch, targetBatch in trainLoader:
-                    if keyboard.is_pressed(killKey):
-                        print(f"Kill key pressed. Saving and closing current training session for {device.deviceType}.")
-                        deviceInterrupted = True
-                        break
                     optimizer.zero_grad()
                     predictions = model(inputBatch)
                     loss = lossFunction(predictions, targetBatch)
                     loss.backward()
                     optimizer.step()
                     totalTrainLoss += loss.item() * inputBatch.size(0)
-                if deviceInterrupted:
-                    break
-
                 averageTrainLoss = totalTrainLoss / trainSize
 
                 model.eval()
                 totalValidationLoss = 0.0
                 with torch.no_grad():
                     for inputBatch, targetBatch in validationLoader:
-                        if keyboard.is_pressed(killKey):
-                            print(f"Kill key pressed. Saving and closing current training session for {device.deviceType}.")
-                            deviceInterrupted = True
-                            break
                         predictions = model(inputBatch)
                         loss = lossFunction(predictions, targetBatch)
                         totalValidationLoss += loss.item() * inputBatch.size(0)
-                if deviceInterrupted:
-                    break
-
                 averageValidationLoss = totalValidationLoss / validationSize
                 print(f"Epoch {epoch + 1} - Train Loss: {averageTrainLoss} - Validation Loss: {averageValidationLoss}")
 
-            # Save model along with metadata
             metadata = {
                 'features': device.whitelist,
                 'pollInterval': pollInterval,
@@ -348,7 +330,7 @@ elif programMode == 2:
         try:
             modelPackage = torch.load(f'models/{device.deviceType}.pt')
             device.whitelist = modelPackage['metadata']['features']
-            pollInterval = modelPackage['metadata']['pollInterval']
+            pollInterval = modelPackage['metadata']['pollInterval'] # Resolve mismatches between device configurations
             windowSize = modelPackage['metadata']['windowSize']
             device.model = modelPackage['model']
             device.model.eval()
@@ -378,15 +360,13 @@ elif programMode == 2:
                         reconstructedTensor = device.model(inputTensor)
                     lossValue = torch.nn.functional.mse_loss(reconstructedTensor, inputTensor).item()
                     print(f'{device.deviceType} anomaly score: {lossValue}')
-                    if lossValue > anomalyThreshold:
-                        print(f'Anomaly detected on {device.deviceType}!')
-                    device.confidenceHistory.append(lossValue)
+                    device.anomalyHistory.append(lossValue)
                     device.sequence = []
 
     os.makedirs('reports', exist_ok=True)
     plt.clf()
     for device in devices:
-        plt.plot(device.confidenceHistory, label=device.deviceType)
+        plt.plot(device.anomalyHistory, label=device.deviceType)
     plt.xlabel('Window')
     plt.ylabel('Anomaly Score')
     plt.title('Anomaly Score Over Time')

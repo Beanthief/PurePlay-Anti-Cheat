@@ -36,14 +36,13 @@ call conda activate PurePlay-Anti-Cheat
 echo Installing PyTorch with Nvidia binaries...
 call conda install -y -q -c pytorch pytorch
 if errorlevel 1 (
-    echo Failed to install Nvidia binaries.
+    echo Failed to install PyTorch with Nvidia binaries.
     pause
     exit /b
 )
 
 echo Installing pip packages...
-REM pip install torch --index-url https://download.pytorch.org/whl/nightly/cu128
-call pip install XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui optuna 
+call pip install XInput-Python mouse keyboard pandas matplotlib pyautogui
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause
