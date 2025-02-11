@@ -3,6 +3,7 @@ import matplotlib
 import pyautogui
 import threading
 import keyboard
+import optuna
 import pandas
 import XInput
 import numpy
@@ -21,22 +22,19 @@ configParser = configparser.ConfigParser()
 configParser.read('config.ini')
 
 # General configurations
-programMode = int(configParser['General']['programMode'])      # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
-pollInterval = int(configParser['General']['pollInterval'])    # time between polls in milliseconds (used for collection and analysis)
-captureKeyboard = int(configParser['General']['captureKeyboard'])  # toggle for keyboard capture
-captureMouse = int(configParser['General']['captureMouse'])    # toggle for mouse capture
-captureGamepad = int(configParser['General']['captureGamepad'])  # toggle for gamepad capture
-killKey = str(configParser['General']['killKey'])              # key to close program (cannot be in keyboardWhitelist)
+programMode =       int(configParser['General']['programMode'])     # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
+pollInterval =      int(configParser['General']['pollInterval'])    # time between polls in milliseconds (collection mode only)
+captureKeyboard =   int(configParser['General']['captureKeyboard']) # toggle for keyboard capture
+captureMouse =      int(configParser['General']['captureMouse'])    # toggle for mouse capture
+captureGamepad =    int(configParser['General']['captureGamepad'])  # toggle for gamepad capture
+killKey =           str(configParser['General']['killKey'])         # key to close program (cannot be in keyboardWhitelist)
 
 # Model configurations (will be overwritten by model metadata if available)
-windowSize = int(configParser['Model']['windowSize'])          # size of input sequences for training
-layerCount = int(configParser['Model']['layerCount'])          # number of LSTM layers in the model
-neuronCount = int(configParser['Model']['neuronCount'])        # number of neurons in each LSTM layer
-learningRate = float(configParser['Model']['learningRate'])      # learning rate for the model
-trainingEpochs = int(configParser['Model']['trainingEpochs'])    # number of epochs for each training cycle
-keyboardWhitelist = str(configParser['Model']['keyboardWhitelist']).split(',')
-mouseWhitelist = str(configParser['Model']['mouseWhitelist']).split(',')
-gamepadWhitelist = str(configParser['Model']['gamepadWhitelist']).split(',')
+windowSize =        int(configParser['Model']['windowSize'])        # size of input sequences for training (affects graph resolution)
+tuningCycles =      int(configParser['Model']['tuningCycles'])      # number of hyperparameter tuning cycles (higher = more accurate, slower)
+keyboardWhitelist = str(configParser['Model']['keyboardWhitelist']).split(',') #
+mouseWhitelist =    str(configParser['Model']['mouseWhitelist']).split(',')    # features to train on
+gamepadWhitelist =  str(configParser['Model']['gamepadWhitelist']).split(',')  # 
 
 # ------------------------
 # Device Classes
@@ -264,6 +262,7 @@ elif programMode == 1:
     ]
     if not files:
         raise ValueError('No data files found. Exiting...')
+    
     for device in devices:
         deviceData = []
         hasFiles = False
@@ -282,64 +281,101 @@ elif programMode == 1:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
             fileData = pandas.read_csv(file)[device.whitelist]
             deviceData.append(fileData)
+        if not hasFiles:
+            print(f'No data files found for {device.deviceType}. Skipping...')
+            continue
+
         dataFrame = pandas.concat(deviceData, ignore_index=True)
         featureData = scaleData(dataFrame.to_numpy())
 
-        if len(featureData) >= device.windowSize:
-            sequenceDataset = SequenceDataset(featureData, device.windowSize)
-            validationSize = int(0.2 * len(sequenceDataset))
-            trainSize = len(sequenceDataset) - validationSize
-            trainDataset, validationDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, validationSize])
-            trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True)
-            validationLoader = torch.utils.data.DataLoader(validationDataset, batch_size=32)
+        if len(featureData) < device.windowSize:
+            print(f"Not enough data for {device.deviceType} to form a sequence. Skipping...")
+            continue
 
-            os.makedirs('models', exist_ok=True)
-            modelPath = f'models/{device.deviceType}.pt'
+        sequenceDataset = SequenceDataset(featureData, device.windowSize)
+        validationSize = int(0.2 * len(sequenceDataset))
+        trainSize = len(sequenceDataset) - validationSize
+        trainDataset, validationDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, validationSize])
+        trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True)
+        validationLoader = torch.utils.data.DataLoader(validationDataset, batch_size=32)
 
-            if os.path.exists(modelPath):
-                print(f'Revising pre-existing model for {device.deviceType}')
-                modelPackage = torch.load(modelPath)
-                model = modelPackage['model']
-            else:
-                print(f'Training new model for {device.deviceType}')
-                model = LSTMAutoencoder(len(device.whitelist), neuronCount, layerCount, device.windowSize)
+        os.makedirs('models', exist_ok=True)
+        modelPath = f'models/{device.deviceType}.pt'
 
-            lossFunction = torch.nn.MSELoss()
-            optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
-
-            for epoch in range(trainingEpochs):
-                model.train()
+        def objective(trial):
+            trialLayerCount = trial.suggest_int("layerCount", 1, 3)
+            trialNeuronCount = trial.suggest_int("neuronCount", 16, 256, step=16)
+            trialLearningRate = trial.suggest_loguniform("learningRate", 1e-5, 1e-1)
+            trialTrainingEpochs = trial.suggest_int("trainingEpochs", 5, 50)
+            trialModel = LSTMAutoencoder(len(device.whitelist), trialNeuronCount, trialLayerCount, device.windowSize)
+            trialLossFunction = torch.nn.MSELoss()
+            trialOptimizer = torch.optim.Adam(trialModel.parameters(), lr=trialLearningRate)
+            for epoch in range(trialTrainingEpochs):
+                trialModel.train()
                 totalTrainLoss = 0.0
                 for inputBatch, targetBatch in trainLoader:
-                    optimizer.zero_grad()
-                    predictions = model(inputBatch)
-                    loss = lossFunction(predictions, targetBatch)
+                    trialOptimizer.zero_grad()
+                    predictions = trialModel(inputBatch)
+                    loss = trialLossFunction(predictions, targetBatch)
                     loss.backward()
-                    optimizer.step()
+                    trialOptimizer.step()
                     totalTrainLoss += loss.item() * inputBatch.size(0)
+                # (Optional) You can compute the average training loss if desired:
                 averageTrainLoss = totalTrainLoss / trainSize
-
-                model.eval()
+                trialModel.eval()
                 totalValidationLoss = 0.0
                 with torch.no_grad():
                     for inputBatch, targetBatch in validationLoader:
-                        predictions = model(inputBatch)
-                        loss = lossFunction(predictions, targetBatch)
+                        predictions = trialModel(inputBatch)
+                        loss = trialLossFunction(predictions, targetBatch)
                         totalValidationLoss += loss.item() * inputBatch.size(0)
                 averageValidationLoss = totalValidationLoss / validationSize
-                print(f'Epoch {epoch + 1} - Train Loss: {averageTrainLoss} - Validation Loss: {averageValidationLoss}')
-
-            metadata = {
-                'features': device.whitelist,
-                'pollInterval': device.pollInterval,
-                'windowSize': device.windowSize
-            }
-            modelPackage = {
-                'model': model,
-                'metadata': metadata
-            }
-            torch.save(modelPackage, modelPath)
-            print(f'Model for {device.deviceType} saved with metadata.')
+                trial.report(averageValidationLoss, epoch)
+                if trial.should_prune():
+                    raise optuna.exceptions.TrialPruned()
+            return averageValidationLoss
+        study = optuna.create_study(direction="minimize")
+        study.optimize(objective, n_trials=tuningCycles)
+        print(f"Best hyperparameters for {device.deviceType}: {study.bestParams}")
+        bestParams = study.bestParams
+        bestModel = LSTMAutoencoder(len(device.whitelist),
+                                     bestParams["neuronCount"],
+                                     bestParams["layerCount"],
+                                     device.windowSize)
+        lossFunction = torch.nn.MSELoss()
+        optimizer = torch.optim.Adam(bestModel.parameters(), lr=bestParams["learningRate"])
+        for epoch in range(bestParams["trainingEpochs"]):
+            bestModel.train()
+            totalTrainLoss = 0.0
+            for inputBatch, targetBatch in trainLoader:
+                optimizer.zero_grad()
+                predictions = bestModel(inputBatch)
+                loss = lossFunction(predictions, targetBatch)
+                loss.backward()
+                optimizer.step()
+                totalTrainLoss += loss.item() * inputBatch.size(0)
+            averageTrainLoss = totalTrainLoss / trainSize
+            bestModel.eval()
+            totalValidationLoss = 0.0
+            with torch.no_grad():
+                for inputBatch, targetBatch in validationLoader:
+                    predictions = bestModel(inputBatch)
+                    loss = lossFunction(predictions, targetBatch)
+                    totalValidationLoss += loss.item() * inputBatch.size(0)
+            averageValidationLoss = totalValidationLoss / validationSize
+            print(f'Epoch {epoch + 1} - Train Loss: {averageTrainLoss} - Validation Loss: {averageValidationLoss}')
+        metadata = {
+            'features': device.whitelist,
+            'pollInterval': device.pollInterval,
+            'windowSize': device.windowSize,
+            'hyperparameters': bestParams
+        }
+        modelPackage = {
+            'model': bestModel,
+            'metadata': metadata
+        }
+        torch.save(modelPackage, modelPath)
+        print(f'Model for {device.deviceType} saved with metadata.')
 
 # MODE 2: Live Analysis
 elif programMode == 2:
