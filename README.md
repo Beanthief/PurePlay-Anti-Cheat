@@ -44,11 +44,9 @@ This solution is perfect for **low-budget game developers** who need a reliable 
 
 3. **Configure the settings**:
    Edit the `config.ini` file to match your preferences and setup requirements.
+   Read the [Configuration Guide](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/conda-test/docs/CONFIG.md) to better understand your options.
 
 4. **Start the application**:
    ```sh
    ./start.bat
    ```
-
-## Documentation
-   - [Configuration Guide](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/conda-test/docs/CONFIG.md)
