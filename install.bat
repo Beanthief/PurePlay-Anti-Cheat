@@ -55,11 +55,11 @@ rem ------------------------
 
 echo Checking if the environment already exists...
 call "%CONDA_PATH%" env list | findstr /C:"PurePlay-Anti-Cheat" >nul
-if errorlevel 0 (
+if %errorlevel%==0 (
     set /p OVERWRITE_ENV="Environment already exists. Do you want to overwrite it? (y/n): "
     if /i "%OVERWRITE_ENV%"=="y" (
         echo Deleting existing environment...
-        call "%CONDA_PATH%" remove -y -q -n PurePlay-Anti-Cheat --all
+        call "%CONDA_PATH%" remove -y -q -n PurePlay-Anti-Cheat
         if errorlevel 1 (
             echo Failed to delete the existing environment.
             pause
