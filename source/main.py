@@ -30,7 +30,7 @@ captureGamepad =    int(configParser['General']['captureGamepad'])  # toggle for
 killKey =           str(configParser['General']['killKey'])         # key to close program (cannot be in keyboardWhitelist)
 
 # Model configurations (will be overwritten by model metadata if available)
-windowSize =        int(configParser['Model']['windowSize'])        # size of input sequences for training (affects graph resolution)
+windowSize =        int(configParser['Model']['windowSize'])        # size of input sequences for training (affects graph resolution and pattern precision)
 tuningCycles =      int(configParser['Model']['tuningCycles'])      # number of hyperparameter tuning cycles (higher = more accurate, slower)
 keyboardWhitelist = str(configParser['Model']['keyboardWhitelist']).split(',') #
 mouseWhitelist =    str(configParser['Model']['mouseWhitelist']).split(',')    # features to train on

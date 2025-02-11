@@ -49,3 +49,6 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    ```sh
    ./start.bat
    ```
+
+## Documentation
+   - [Configuration Docs](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/conda-test/docs/CONFIG.md)
