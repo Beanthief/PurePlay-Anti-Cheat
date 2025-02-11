@@ -1,4 +1,5 @@
-# PurePlay-Anti-Cheat <small>v0.1</small>
+# PurePlay-Anti-Cheat
+v0.1
 **Free, Open-Source Anti-Cheat for Competitive Game Developers**
 - *Note: This project is in development and is currently acting as my college Capstone project. It is not a working product.*
 
@@ -20,11 +21,11 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    - Requires careful configuration to minimize performance impact.
    - Client-side processing only; may need manual review or automated filtering for results.
 
-2. **Server-Only Model**:
+2. **Server-Only Model (NOT IMPLEMENTED)**:
    - Requires AI acceleration hardware on servers, which may be costly but reduces client performance impacts.
    - Integration with the game engine required for networked view angles.
 
-3. **Combined Model**:
+3. **Combined Model (NOT IMPLEMENTED)**:
    - Offers the highest accuracy.
    - Requires AI-capable hardware on both the server and client sides.
    - Involves deeper integration with the game engine.
