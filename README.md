@@ -1,5 +1,6 @@
 # PurePlay Anti-Cheat (WIP)
 **Free, Open-Source Anti-Cheat for Competitive Game Developers**
+Current version: v0.1
 - *Note: This project is in development and is currently acting as my college Capstone project. It is not a working product.*
 
 ## Project Overview
