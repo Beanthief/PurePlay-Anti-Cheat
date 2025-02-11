@@ -21,7 +21,7 @@ if errorlevel 1 (
 )
 
 echo Creating conda environment...
-call conda create -n PurePlay-Anti-Cheat -y cudatoolkit cudnn
+call conda create -n PurePlay-Anti-Cheat -y
 if errorlevel 1 (
     echo Failed to create the environment.
     pause
@@ -31,8 +31,15 @@ if errorlevel 1 (
 echo Activating environment...
 call conda activate PurePlay-Anti-Cheat
 
+echo Installing python...
+conda install python
+
+echo Installing nvidia binaries...
+conda install -c nvidia cudatoolkit=12.6 cudnn
+
 echo Installing pip packages...
-pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui torch
+pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui optuna
+pip install --index-url https://download.pytorch.org/whl/cu126
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause
