@@ -51,4 +51,4 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    ```
 
 ## Documentation
-   - [Configuration Docs](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/conda-test/docs/CONFIG.md)
+   - [Configuration Guide](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/conda-test/docs/CONFIG.md)

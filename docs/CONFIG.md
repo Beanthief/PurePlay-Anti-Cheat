@@ -1,4 +1,4 @@
-# Configuration Documentation for Input Capture and LSTM Autoencoder System
+# Configuration Guide
 
 This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for tasks such as anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, learning rate, and training epochs without manually setting them.
 
