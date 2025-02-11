@@ -154,7 +154,7 @@ The anomaly graph displays computed anomaly scores over successive time windows.
 
 4. **Multi-Device Comparison:**  
    - **Cross-Device Insights:**  
-     When multiple devices are being analyzed, compare their anomaly score patterns. A spike in one device might be normal for that particular sensor, while a simultaneous increase across devices might indicate a broader issue.
+     When multiple devices are being analyzed, compare their anomaly score patterns. A spike in one device might indicate cheating for that particular device, while a simultaneous increase across devices might indicate a broader issue as most cheats operate on one feature or device at a time.
   
 5. **Setting Thresholds:**  
    - **Defining Alerts:**  
@@ -168,7 +168,7 @@ The anomaly graph displays computed anomaly scores over successive time windows.
 ## 5. Best Practices for Intelligent Training
 
 - **Data Quality:**  
-  Verify that your data is clean and representative. Remove anomalies or outliers where possible to improve training quality.
+  Verify that your data is clean and representative. Remove anomalies or outliers where possible to improve training quality. You may want to tie capture states to game states so UI navigation and typing won't interfere.
 
 - **Iterative Refinement:**  
   Start with moderate settings for `windowSize` and `pollInterval`, and adjust based on early training results and model performance.
