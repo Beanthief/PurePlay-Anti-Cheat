@@ -7,9 +7,9 @@ This document provides an in-depth explanation of the configuration options, dat
 ## 1. Overview
 
 The system has three primary modes of operation:
-- **Data Collection (programMode = 0):** Captures input data from specified devices at defined intervals.
-- **Model Training (programMode = 1):** Processes collected data, updates existing models and trains new models with automatic hyperparameter tuning.
-- **Live Analysis (programMode = 2):** Uses the trained model to analyze incoming data in real-time and compute anomaly scores.
+- **Data Collection:** Captures input data from specified devices at defined intervals.
+- **Model Training:** Processes collected data, updates existing models and trains new models with automatic hyperparameter tuning.
+- **Live Analysis:** Uses the trained model to analyze incoming data in real-time and compute anomaly scores.
 
 The configuration parameters are stored in a file called `config.ini`, which is divided into two sections: **General** and **Model**.
 
@@ -27,12 +27,10 @@ These parameters control the high-level operation and data collection aspects:
   - `0` — Data Collection  
   - `1` — Model Training  
   - `2` — Live Analysis  
-  *Usage:* Determines which mode the program will run in.
 
 - **pollInterval**  
   *Type:* Integer (milliseconds)  
-  *Description:*  
-  Defines the time interval between successive polls of the input devices during data collection.  
+  *Description:* Defines the time between device polls.
   *Impact:*  
   - A shorter poll interval results in higher temporal resolution and more data points.
   - A longer poll interval reduces data size and processing load but might miss short-lived events.
@@ -40,42 +38,37 @@ These parameters control the high-level operation and data collection aspects:
 
 - **captureKeyboard**  
   *Type:* Integer (0 or 1)  
-  *Description:*  
-  Toggle to enable (`1`) or disable (`0`) keyboard data capture.
+  *Description:* Toggle to enable (`1`) or disable (`0`) keyboard data capture.
 
 - **captureMouse**  
   *Type:* Integer (0 or 1)  
-  *Description:*  
-  Toggle to enable (`1`) or disable (`0`) mouse data capture.
+  *Description:* Toggle to enable (`1`) or disable (`0`) mouse data capture.
 
 - **captureGamepad**  
   *Type:* Integer (0 or 1)  
-  *Description:*  
-  Toggle to enable (`1`) or disable (`0`) gamepad data capture.
+  *Description:* Toggle to enable (`1`) or disable (`0`) gamepad data capture.
 
 - **killKey**  
   *Type:* String  
-  *Description:*  
-  The key that, when pressed, will terminate the program. **Important:** This key must not be included in any device’s whitelist.
+  *Description:* The key that, when pressed, will terminate the program.
+  **Important:** This key must not be included in any device’s whitelist.
 
 ### Model Section
 
 These parameters guide the training and feature selection process:
 
 - **windowSize**  
-  *Type:* Integer  
-  *Description:*  
-  The number of consecutive data points (time steps) used to form each training sequence.  
+  *Type:* Integer
+  *Description:* The number of time steps in an input sequence.
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
   - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
 
 - **tuningCycles**  
   *Type:* Integer  
-  *Description:*  
-  The number of hyperparameter tuning cycles performed during model training.  
+  *Description:* The number of cycles through the automatic tuning process.
   *Impact:*  
-  More tuning cycles allow the background process (using Optuna) to explore a larger hyperparameter space for an optimal model configuration.  
+  More tuning cycles allows the training loop to explore a larger hyperparameter space for higher accuracy.
   **Note:** The hyperparameter tuning process automatically optimizes parameters such as:
   - Number of LSTM layers (`layerCount`)
   - Neuron count per layer (`neuronCount`)
