@@ -1,4 +1,4 @@
-# PurePlay-Anti-Cheat <span style="float: right;">v0.1</span>
+# PurePlay-Anti-Cheat <small>v0.1</small>
 **Free, Open-Source Anti-Cheat for Competitive Game Developers**
 - *Note: This project is in development and is currently acting as my college Capstone project. It is not a working product.*
 
