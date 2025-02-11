@@ -1,4 +1,6 @@
 @echo off
+setlocal
+
 set "installer_url=https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe"
 set "installer_path=%USERPROFILE%\Downloads\Miniforge3-latest-Windows-x86_64.exe"
 
@@ -20,10 +22,10 @@ if errorlevel 1 (
     exit /b
 )
 
-echo Creating conda environment...
-call conda create -n PurePlay-Anti-Cheat -y
+echo Creating conda environment with Python...
+call conda create -y -q -n PurePlay-Anti-Cheat python
 if errorlevel 1 (
-    echo Failed to create the environment.
+    echo Failed to create the environment with Python.
     pause
     exit /b
 )
@@ -31,15 +33,17 @@ if errorlevel 1 (
 echo Activating environment...
 call conda activate PurePlay-Anti-Cheat
 
-echo Installing python...
-conda install python
-
-echo Installing nvidia binaries...
-conda install -c nvidia cudatoolkit=12.6 cudnn
+echo Installing PyTorch with Nvidia binaries...
+call conda install -y -q -c pytorch pytorch
+if errorlevel 1 (
+    echo Failed to install Nvidia binaries.
+    pause
+    exit /b
+)
 
 echo Installing pip packages...
-pip install keras-tuner XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui optuna
-pip install --index-url https://download.pytorch.org/whl/cu126
+REM pip install torch --index-url https://download.pytorch.org/whl/nightly/cu128
+call pip install XInput-Python mouse keyboard scikit-learn pandas matplotlib pyautogui optuna 
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause
@@ -48,3 +52,4 @@ if errorlevel 1 (
 
 echo Run start.bat to begin!
 pause
+endlocal

@@ -43,6 +43,7 @@ gamepadWhitelist =   str(configParser['Model']['gamepadWhitelist']).split(',')  
 class Device:
     def __init__(self, isCapturing, whitelist):
         self.deviceType = ''
+        self.dataPath = ''
         self.isCapturing = isCapturing
         self.whitelist = whitelist
         self.sequence = []
@@ -221,9 +222,9 @@ if programMode != 1:
 
 # MODE 0: Data Collection
 if programMode == 0:
-    def saveSequence(device):
+    def saveSequence(device, filePath):
         os.makedirs('data', exist_ok=True)
-        filePath = f'data/{device.deviceType}_{time.strftime("%Y%m%d-%H%M%S")}.csv'
+        
         if not os.path.isfile(filePath):
             with open(filePath, 'w', newline='') as fileHandle:
                 writer = csv.writer(fileHandle)
@@ -234,6 +235,8 @@ if programMode == 0:
                 writer.writerow(state)
         device.sequence = []
 
+    for device in devices:
+        device.dataPath = f'data/{device.deviceType}_{time.strftime("%Y%m%d-%H%M%S")}.csv'
     pollCounter = 0
     while not killEvent.is_set():
         time.sleep(pollInterval / 1000)
@@ -244,13 +247,8 @@ if programMode == 0:
         if pollCounter == saveInterval:
             for device in devices:
                 if device.isCapturing:
-                    threading.Thread(target=saveSequence, args=(device,)).start()
+                    threading.Thread(target=saveSequence, args=(device, device.dataPath)).start()
             pollCounter = 0
-
-    # Final save before exit
-    for device in devices:
-        if device.isCapturing and device.sequence:
-            saveSequence(device)
 
 # MODE 1: Model Training
 elif programMode == 1:
@@ -279,7 +277,8 @@ elif programMode == 1:
 
             if os.path.exists(modelPath):
                 print(f'Revising pre-existing model for {device.deviceType}')
-                model = torch.load(modelPath)
+                modelPackage = torch.load(modelPath)
+                model = modelPackage['model']
             else:
                 print(f'Training new model for {device.deviceType}')
                 model = LSTMAutoencoder(len(device.whitelist), neuronCount, layerCount, windowSize)
@@ -329,15 +328,29 @@ elif programMode == 1:
                 averageValidationLoss = totalValidationLoss / validationSize
                 print(f"Epoch {epoch + 1} - Train Loss: {averageTrainLoss} - Validation Loss: {averageValidationLoss}")
 
-            torch.save(model, modelPath)
-            print(f"Model for {device.deviceType} saved.")
+            # Save model along with metadata
+            metadata = {
+                'features': device.whitelist,
+                'pollInterval': pollInterval,
+                'windowSize': windowSize
+            }
+            modelPackage = {
+                'model': model,
+                'metadata': metadata
+            }
+            torch.save(modelPackage, modelPath)
+            print(f"Model for {device.deviceType} saved with metadata.")
 
 # MODE 2: Live Analysis
 elif programMode == 2:
     modelLoaded = False
     for device in devices:
         try:
-            device.model = torch.load(f'models/{device.deviceType}.pt')
+            modelPackage = torch.load(f'models/{device.deviceType}.pt')
+            device.whitelist = modelPackage['metadata']['features']
+            pollInterval = modelPackage['metadata']['pollInterval']
+            windowSize = modelPackage['metadata']['windowSize']
+            device.model = modelPackage['model']
             device.model.eval()
             modelLoaded = True
         except Exception as exception:
@@ -357,8 +370,8 @@ elif programMode == 2:
                 for state in device.sequence:
                     filteredState = [state[device.features.index(feature)] for feature in device.whitelist]
                     filteredSequence.append(filteredState)
-                if len(filteredSequence) >= windowSize:
-                    inputData = numpy.array(filteredSequence[-windowSize:])
+                if len(filteredSequence) >= device.windowSize:
+                    inputData = numpy.array(filteredSequence[-device.windowSize:])
                     inputData = scale_data(inputData)
                     inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0)
                     with torch.no_grad():
