@@ -38,6 +38,7 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    ```
 
 2. **Run the install script**:
+   Be careful to follow the instructions in the console window.
    ```sh
    ./install.bat
    ```
