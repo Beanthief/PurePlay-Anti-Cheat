@@ -30,7 +30,7 @@ These parameters control the high-level operation and data collection aspects:
 
 - **pollInterval**  
   *Type:* Integer (milliseconds)  
-  *Description:* Defines the time between device polls.
+  *Description:* Defines the time between device polls.  
   *Impact:*  
   - A shorter poll interval results in higher temporal resolution and more data points.
   - A longer poll interval reduces data size and processing load but might miss short-lived events.
@@ -50,7 +50,7 @@ These parameters control the high-level operation and data collection aspects:
 
 - **killKey**  
   *Type:* String  
-  *Description:* The key that, when pressed, will terminate the program.
+  *Description:* The key that, when pressed, will terminate the program.  
   **Important:** This key must not be included in any device’s whitelist.
 
 ### Model Section
@@ -59,14 +59,14 @@ These parameters guide the training and feature selection process:
 
 - **windowSize**  
   *Type:* Integer
-  *Description:* The number of time steps in an input sequence.
+  *Description:* The number of time steps in an input sequence.  
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
   - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
 
 - **tuningCycles**  
   *Type:* Integer  
-  *Description:* The number of cycles through the automatic tuning process.
+  *Description:* The number of cycles through the automatic tuning process.  
   *Impact:*  
   More tuning cycles allows the training loop to explore a larger hyperparameter space for higher accuracy.
   **Note:** The hyperparameter tuning process automatically optimizes parameters such as:
