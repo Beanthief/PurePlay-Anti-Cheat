@@ -58,7 +58,7 @@ These parameters control the high-level operation and data collection aspects:
 These parameters guide the training and feature selection process:
 
 - **windowSize**  
-  *Type:* Integer
+  *Type:* Integer  
   *Description:* The number of time steps in an input sequence.  
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
