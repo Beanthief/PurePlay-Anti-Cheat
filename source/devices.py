@@ -46,7 +46,7 @@ class Mouse(Device):
     def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
         super(Mouse, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
         self.deviceType = 'mouse'
-        self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseAngle', 'mouseMagnitude']
+        self.features = ['left', 'right', 'middle', 'x1', 'x2', 'angle', 'magnitude']
         if self.whitelist == ['']:
             self.whitelist = self.features
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]

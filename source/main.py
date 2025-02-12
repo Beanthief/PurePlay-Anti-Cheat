@@ -52,11 +52,13 @@ deviceList = (
     devices.Gamepad(captureGamepad, gamepadWhitelist, gamepadPollRate, gamepadWindowSize)
 )
 
-if killKey in deviceList[0].whitelist:
-    raise ValueError(f'Error: Kill key \'{killKey}\' cannot be in the whitelist')
 for i, _ in enumerate(deviceList):
     if recordBind in deviceList[i].whitelist:
-        raise ValueError(f'Error: Record features cannot be in whitelists')
+        print(f'Removed recordBind from {deviceList[i].deviceType} whitelist.')
+    if killKey in deviceList[i].whitelist:
+        print(f'Removed killKey from {deviceList[i].deviceType} whitelist.')
+if killKey == recordBind:
+    raise ValueError(f'Error: recordBind cannot also be killKey.')
 
 # ------------------------
 # Data Utilities
@@ -88,6 +90,7 @@ def scale_data(data, featureRange=(0, 1)):
 # Program Control
 # ------------------------
 
+# Kill bind
 killEvent = threading.Event()
 def kill_callback():
     if not killEvent.is_set():
@@ -95,8 +98,18 @@ def kill_callback():
         killEvent.set()
 keyboard.add_hotkey(killKey, kill_callback)
 
+# Record bind
+class GamepadRecordingHandler(XInput.EventHandler):
+    def process_button_event(self, event):
+        if event.button == recordBind:
+            if event.type == XInput.EVENT_BUTTON_PRESSED:
+                start_recording()
+            elif event.type == XInput.EVENT_BUTTON_RELEASED:
+                stop_recording()
+
 recordEvent = threading.Event()
 def start_recording():
+    print('Test')
     if not recordEvent.is_set():
         recordEvent.set()
         for device in deviceList:
@@ -107,12 +120,19 @@ def stop_recording():
     if recordEvent.is_set():
         recordEvent.clear()
 
+keyboardPressHook = None
+keyboardReleaseHook = None
+mouseDownHook = None
+mouseUpHook = None                       # FIX HOOK SCOPE ISSUE
+gamepadHandler = None
+gamepadThread = None
+
 if recordBind in deviceList[0].features:
-    keyboard.on_press_key(recordBind, lambda event: start_recording())
-    keyboard.on_release_key(recordBind, lambda event: stop_recording())
+        keyboardPressHook = keyboard.on_press_key(recordBind, lambda: start_recording())
+        keyboardReleaseHook = keyboard.on_release_key(recordBind, lambda: stop_recording())
 elif recordBind in deviceList[1].features:
-    mouse.on_button(lambda event: start_recording(), button=recordBind, types=('down',))
-    mouse.on_button(lambda event: stop_recording(), button=recordBind, types=('up',))
+    mouseDownHook = mouse.on_button(lambda: start_recording(), buttons=(recordBind,), types=('down',))
+    mouseUpHook = mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
 elif recordBind in deviceList[2].features:
     class GamepadRecordingHandler(XInput.EventHandler):
         def process_button_event(self, event):
@@ -121,8 +141,13 @@ elif recordBind in deviceList[2].features:
                     start_recording()
                 elif event.type == XInput.EVENT_BUTTON_RELEASED:
                     stop_recording()
-    gamepad_handler = GamepadRecordingHandler()
-    gamepad_thread = XInput.GamepadThread(gamepad_handler)
+    gamepadHandler = GamepadRecordingHandler()
+    gamepadThread = XInput.GamepadThread(gamepadHandler)
+    gamepadThread.start()
+
+# TEMPORARY MOUSE RECORD BIND
+mouse.on_button(lambda: start_recording(), buttons=(recordBind,), types=('down',))
+mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
 
 # ------------------------
 # Program Modes
@@ -131,51 +156,42 @@ elif recordBind in deviceList[2].features:
 # MODE 0: Data Collection
 if programMode == 0:
     def start_save_loop(device):
-        os.makedirs('data', exist_ok=True)
-        filePath = f"data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
-        if not os.path.isfile(filePath):
-            with open(filePath, 'w', newline='') as file:
-                csv.writer(file).writerow(device.features)
-        saveInterval = 5
-        writeTimes, intervals = [], []
-        lastWriteTime = time.time()
-        with open(filePath, 'a', newline='') as file:
-            writer = csv.writer(file)
-            while recordEvent.is_set() and not killEvent.is_set():
-                time.sleep(saveInterval)
-                currentTime = time.time()
-                intervals.append(currentTime - lastWriteTime)
-                lastWriteTime = currentTime
-                startTime = time.time()
-                for state in device.sequence:
-                    writer.writerow(state)
-                device.sequence = []
-                writeTimes.append(time.time() - startTime)
-                if len(writeTimes) == 10:
-                    averageWriteTime = sum(writeTimes) / 10
-                    averageInterval = sum(intervals) / 10
-                    saveInterval *= 1.1 if averageWriteTime > 0.3 * averageInterval else 0.9
-                    writeTimes.clear(); intervals.clear()
-
+        if device.isCapturing:
+            filePath = f"data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+            if not os.path.isfile(filePath):
+                with open(filePath, 'w', newline='') as file:
+                    csv.writer(file).writerow(device.features)
+            with open(filePath, 'a', newline='') as file:
+                writer = csv.writer(file)
+                if not recordBind:
+                    recordEvent.set()
+                while recordEvent.is_set() and not killEvent.is_set():
+                    time.sleep(1)
+                    for state in device.sequence:
+                        print('Writing state')
+                        writer.writerow(state)
+                    device.sequence = []
 
     def start_poll_loop(device):
-        while recordEvent.is_set() and not killEvent.is_set():
-            time.sleep(1 / device.pollingRate)
-            for device in deviceList:
-                if device.isCapturing:
-                    device.poll()
-
-    for device in deviceList:
         if device.isCapturing:
-            thread = threading.Thread(target=start_poll_loop, args=(device,)).start()
+            if not recordBind:
+                recordEvent.set()
+            while recordEvent.is_set() and not killEvent.is_set():
+                time.sleep(1 / device.pollingRate)
+                device.poll()
 
-    for device in deviceList:
-        if device.isCapturing:
-            threading.Thread(target=start_save_loop, args=(device, device.dataPath)).start()
+    os.makedirs('data', exist_ok=True)
+
+    if not recordBind:
+        for device in deviceList:
+            if device.isCapturing:
+                thread = threading.Thread(target=start_poll_loop, args=(device,)).start()
+        for device in deviceList:
+            if device.isCapturing:
+                threading.Thread(target=start_save_loop, args=(device,)).start()
 
     while not killEvent.is_set():
         time.sleep(0.05)
-        print(f'Kill key pressed. Exiting...')
 
 # MODE 1: Model Training
 elif programMode == 1:
@@ -278,7 +294,7 @@ elif programMode == 2:
                 filteredSequence.append(filteredState)
             if len(filteredSequence) >= device.windowSize:
                 inputData = numpy.array(filteredSequence[-device.windowSize:])
-                inputData = scaleData(inputData)
+                inputData = scale_data(inputData)
                 inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0).to(processor)
                 with torch.no_grad():
                     reconstructedTensor = device.model(inputTensor)

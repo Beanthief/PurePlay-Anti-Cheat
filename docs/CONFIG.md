@@ -31,12 +31,12 @@ These parameters control the high-level operation of the program.
 - **recordBind**  
   *Type:* String  
   *Description:* This bind will toggle data collection. Can be any feature of any device.  
-  **Important:** This bind must not be included in any whitelists.
+  **Important:** This bind must not be included in any whitelists and cannot be the killKey.
 
 - **killKey**  
   *Type:* String  
-  *Description:* The key that, when pressed, will terminate the program.  
-  **Important:** This key must not be included in keyboardWhitelist.
+  *Description:* The bind that, when pressed, will terminate the program. Must be a keyboard key.  
+  **Important:** This bind must not be included in any whitelists and cannot be the killKey.
 
 ### Device Sections
 
