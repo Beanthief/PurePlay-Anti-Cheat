@@ -40,12 +40,15 @@ class LSTMAutoencoder(torch.nn.Module):
     def get_test_loss(self, dataLoader):
         self.eval()
         totalLoss = 0.0
+        totalSamples = 0
         with torch.no_grad():
             for inputBatch, targetBatch in dataLoader:
                 inputBatch = inputBatch.to(self.processor)
                 targetBatch = targetBatch.to(self.processor)
                 predictions = self(inputBatch)
                 loss = self.lossFunction(predictions, targetBatch)
-                totalLoss += loss.item() * inputBatch.size(0)
-        valLoss = totalLoss / len(dataLoader)
+                batchSize = inputBatch.size(0)
+                totalLoss += loss.item() * batchSize
+                totalSamples += batchSize
+        valLoss = totalLoss / totalSamples
         return valLoss
