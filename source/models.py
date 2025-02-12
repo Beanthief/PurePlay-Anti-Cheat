@@ -36,7 +36,7 @@ class LSTMAutoencoder(torch.nn.Module):
                 loss.backward()
                 self.optimizer.step()
 
-    def get_validation_loss(self, dataLoader):
+    def get_test_loss(self, dataLoader):
         self.eval()
         totalLoss = 0.0
         with torch.no_grad():
@@ -47,5 +47,4 @@ class LSTMAutoencoder(torch.nn.Module):
                 loss = self.lossFunction(predictions, targetBatch)
                 totalLoss += loss.item() * inputBatch.size(0)
         valLoss = totalLoss / len(dataLoader)
-        print(f'Validation Loss: {valLoss}')
         return valLoss

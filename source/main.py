@@ -53,10 +53,12 @@ deviceList = (
 )
 
 for i, _ in enumerate(deviceList):
-    if recordBind in deviceList[i].whitelist:
-        print(f'Removed recordBind from {deviceList[i].deviceType} whitelist.')
-    if killKey in deviceList[i].whitelist:
-        print(f'Removed killKey from {deviceList[i].deviceType} whitelist.')
+    deviceAnalogs = ['angle', 'magnitude', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY']
+    if not recordBind or killKey in deviceAnalogs:
+        if recordBind in deviceList[i].whitelist:
+            print(f'Removed recordBind from {deviceList[i].deviceType} whitelist.')
+        if killKey in deviceList[i].whitelist:
+            print(f'Removed killKey from {deviceList[i].deviceType} whitelist.')
 if killKey == recordBind:
     raise ValueError(f'Error: recordBind cannot also be killKey.')
 
@@ -87,53 +89,69 @@ def scale_data(data, featureRange=(0, 1)):
     return dataArray * scaleValue + minValue
 
 # ------------------------
-# Program Control
+# Loops
+# ------------------------
+
+def start_save_loop(device):
+    filePath = f"data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    if not os.path.isfile(filePath):
+        with open(filePath, 'w', newline='') as file:
+            csv.writer(file).writerow(device.whitelist)
+    with open(filePath, 'a', newline='') as file:
+        writer = csv.writer(file)
+        if not recordBind:
+            recordEvent.set()
+        while recordEvent.is_set() and not killEvent.is_set():
+            time.sleep(1)
+            for state in device.sequence:
+                writer.writerow(state)
+            device.sequence = []
+
+def start_analysis_loop(device):
+    if not recordBind:
+        recordEvent.set()
+    while recordEvent.is_set() and not killEvent.is_set():
+        if len(device.sequence) >= device.windowSize:
+            inputData = scale_data(numpy.array(device.sequence[-device.windowSize:]))
+            inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0).to(processor)
+            with torch.no_grad():
+                reconstructedTensor = device.model(inputTensor)
+            lossValue = torch.nn.functional.mse_loss(reconstructedTensor, inputTensor).item()
+            device.anomalyHistory.append(lossValue)
+            device.sequence = []
+
+# ------------------------
+# Hotkeys
 # ------------------------
 
 # Kill bind
 killEvent = threading.Event()
 def kill_callback():
     if not killEvent.is_set():
-        print('Kill key pressed. Saving and closing.')
+        print('Kill key pressed. Exiting...')
         killEvent.set()
 keyboard.add_hotkey(killKey, kill_callback)
 
 # Record bind
-class GamepadRecordingHandler(XInput.EventHandler):
-    def process_button_event(self, event):
-        if event.button == recordBind:
-            if event.type == XInput.EVENT_BUTTON_PRESSED:
-                start_recording()
-            elif event.type == XInput.EVENT_BUTTON_RELEASED:
-                stop_recording()
-
 recordEvent = threading.Event()
 def start_recording():
-    print('Test')
     if not recordEvent.is_set():
         recordEvent.set()
         for device in deviceList:
             if device.isCapturing:
-                threading.Thread(target=start_poll_loop, args=(device,)).start()
-                threading.Thread(target=start_save_loop, args=(device,)).start()
+                threading.Thread(target=device.start_poll_loop, args=(recordEvent, killEvent)).start()
+                if programMode == 0:
+                    threading.Thread(target=start_save_loop, args=(device,)).start()
+                elif programMode == 2:
+                    threading.Thread(target=start_analysis_loop, args=(device,)).start()
 def stop_recording():
     if recordEvent.is_set():
         recordEvent.clear()
-
-keyboardPressHook = None
-keyboardReleaseHook = None
-mouseDownHook = None
-mouseUpHook = None                       # FIX HOOK SCOPE ISSUE
-gamepadHandler = None
-gamepadThread = None
-
-if recordBind in deviceList[0].features:
-        keyboardPressHook = keyboard.on_press_key(recordBind, lambda: start_recording())
-        keyboardReleaseHook = keyboard.on_release_key(recordBind, lambda: stop_recording())
-elif recordBind in deviceList[1].features:
-    mouseDownHook = mouse.on_button(lambda: start_recording(), buttons=(recordBind,), types=('down',))
-    mouseUpHook = mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
-elif recordBind in deviceList[2].features:
+keyboard.on_press_key(recordBind, lambda: start_recording())
+keyboard.on_release_key(recordBind, lambda: stop_recording())
+mouse.on_button(lambda: start_recording(), buttons=(recordBind,), types=('down',))
+mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
+if XInput.get_connected()[0]:
     class GamepadRecordingHandler(XInput.EventHandler):
         def process_button_event(self, event):
             if event.button == recordBind:
@@ -143,11 +161,6 @@ elif recordBind in deviceList[2].features:
                     stop_recording()
     gamepadHandler = GamepadRecordingHandler()
     gamepadThread = XInput.GamepadThread(gamepadHandler)
-    gamepadThread.start()
-
-# TEMPORARY MOUSE RECORD BIND
-mouse.on_button(lambda: start_recording(), buttons=(recordBind,), types=('down',))
-mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
 
 # ------------------------
 # Program Modes
@@ -155,43 +168,14 @@ mouse.on_button(lambda: stop_recording(), buttons=(recordBind,), types=('up',))
 
 # MODE 0: Data Collection
 if programMode == 0:
-    def start_save_loop(device):
-        if device.isCapturing:
-            filePath = f"data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
-            if not os.path.isfile(filePath):
-                with open(filePath, 'w', newline='') as file:
-                    csv.writer(file).writerow(device.features)
-            with open(filePath, 'a', newline='') as file:
-                writer = csv.writer(file)
-                if not recordBind:
-                    recordEvent.set()
-                while recordEvent.is_set() and not killEvent.is_set():
-                    time.sleep(1)
-                    for state in device.sequence:
-                        print('Writing state')
-                        writer.writerow(state)
-                    device.sequence = []
-
-    def start_poll_loop(device):
-        if device.isCapturing:
-            if not recordBind:
-                recordEvent.set()
-            while recordEvent.is_set() and not killEvent.is_set():
-                time.sleep(1 / device.pollingRate)
-                device.poll()
-
     os.makedirs('data', exist_ok=True)
-
-    if not recordBind:
-        for device in deviceList:
-            if device.isCapturing:
-                thread = threading.Thread(target=start_poll_loop, args=(device,)).start()
-        for device in deviceList:
-            if device.isCapturing:
-                threading.Thread(target=start_save_loop, args=(device,)).start()
-
-    while not killEvent.is_set():
-        time.sleep(0.05)
+    for device in deviceList:
+        if device.isCapturing:
+            device.whitelist = device.features
+            if not recordBind:
+                threading.Thread(target=device.start_poll_loop, args=(recordEvent, killEvent)).start()
+            threading.Thread(target=start_save_loop, args=(device,)).start()
+    killEvent.wait()
 
 # MODE 1: Model Training
 elif programMode == 1:
@@ -208,7 +192,6 @@ elif programMode == 1:
         raise ValueError('Error: Missing data directory. Exiting...')
     
     for device in deviceList:
-        # Data validation
         dataList = []
         for file in files:
             fileName = os.path.basename(file)
@@ -236,20 +219,24 @@ elif programMode == 1:
         # Prepare data for training
         featureData = scale_data(dataFrame.to_numpy())
         sequenceDataset = SequenceDataset(featureData, device.windowSize)
-        validationSize = int(0.2 * len(sequenceDataset))
-        trainSize = len(sequenceDataset) - validationSize
-        trainDataset, validationDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, validationSize])
+        testSize = int(0.2 * len(sequenceDataset))
+        trainSize = len(sequenceDataset) - testSize
+        trainDataset, testDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, testSize])
         trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True)
-        validationLoader = torch.utils.data.DataLoader(validationDataset, batch_size=32)
+        testLoader = torch.utils.data.DataLoader(testDataset, batch_size=32)
 
         # Automatic hyperparameter tuning
         def objective(trial):
-            layers = trial.suggest_int('layers', 1, 3)
-            neurons = trial.suggest_int('neurons', 16, 128, step=16)
-            learningRate = trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
-            device.model = models.LSTMAutoencoder(processor, device.whitelist, device.windowSize, layers, neurons, learningRate).to(processor)
-            device.model.train_model(trainLoader, trialEpochs, trial)
-            return device.model.get_validation_loss(validationLoader)
+            device.model = models.LSTMAutoencoder(
+                processor, 
+                device.whitelist, 
+                device.windowSize, 
+                trial.suggest_int('layers', 1, 3), 
+                trial.suggest_int('neurons', 16, 128, step=16), 
+                trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
+            ).to(processor)
+            device.model.train_weights(trainLoader, trialEpochs)
+            return device.model.get_test_loss(testLoader)
         study = optuna.create_study(direction='minimize')
         study.optimize(objective, n_trials=tuningTrials)
 
@@ -262,9 +249,10 @@ elif programMode == 1:
             study.best_params['neurons'], 
             study.best_params['learningRate']
         ).to(processor)
-        device.model.train_model(trainLoader, finalEpochs)
-        device.model.get_validation_loss(validationLoader)
-        
+        device.model.train_weights(trainLoader, finalEpochs)
+        testLoss = device.model.get_test_loss(testLoader)
+        print(f'Final test loss: {testLoss}')
+
         # Save model and metadata
         metadata = {
             'features': device.whitelist,
@@ -283,54 +271,21 @@ elif programMode == 1:
 
 # MODE 2: Live Analysis
 elif programMode == 2:
-    def start_analysis_loop(device):
-        while not killEvent.is_set():
-            if killEvent.wait(1 / device.pollingRate):
-                break
-            device.poll()
-            filteredSequence = []
-            for state in device.sequence:
-                filteredState = [state[device.features.index(feature)] for feature in device.whitelist]
-                filteredSequence.append(filteredState)
-            if len(filteredSequence) >= device.windowSize:
-                inputData = numpy.array(filteredSequence[-device.windowSize:])
-                inputData = scale_data(inputData)
-                inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0).to(processor)
-                with torch.no_grad():
-                    reconstructedTensor = device.model(inputTensor)
-                lossValue = torch.nn.functional.mse_loss(reconstructedTensor, inputTensor).item()
-                print(f'{device.deviceType} anomaly score: {lossValue}')
-                device.anomalyHistory.append(lossValue)
-                device.sequence = []
-
-    # Load models
-    modelLoaded = False
-    for device in deviceList:
-        try:
-            modelPackage = torch.load(f'models/{device.deviceType}.pt')
-            device.whitelist = modelPackage['metadata']['features']
-            device.pollingRate = modelPackage['metadata']['pollingRate']
-            device.windowSize = modelPackage['metadata']['windowSize']
-            device.model = modelPackage['model'].to(processor)
-            device.model.eval()
-            modelLoaded = True
-        except Exception as exception:
-            print(f'No {device.deviceType} model found')
-    if not modelLoaded:
-        raise ValueError('No models found. Exiting...')
-    
-    # Start threaded polling and analysis
-    analysisThreads = []
     for device in deviceList:
         if device.isCapturing:
-            thread = threading.Thread(target=start_analysis_loop, args=(device,))
-            thread.start()
-            analysisThreads.append(thread)
+            try:
+                modelPackage = torch.load(f'models/{device.deviceType}.pt')
+                device.whitelist = modelPackage['metadata']['features']
+                device.pollingRate = modelPackage['metadata']['pollingRate']
+                device.windowSize = modelPackage['metadata']['windowSize']
+                device.model = modelPackage['model'].to(processor).eval()
+                if not recordBind:
+                    threading.Thread(target=device.start_poll_loop, args=(recordEvent, killEvent)).start()
+                threading.Thread(target=start_analysis_loop, args=(device,))
+            except:
+                print(f'No {device.deviceType} model found')
     killEvent.wait()
-    for thread in analysisThreads:
-        thread.join()
 
-    # Generate anomaly graph
     os.makedirs('reports', exist_ok=True)
     matplotlib.use('Agg')
     for device in deviceList:

@@ -72,7 +72,7 @@ if %errorlevel%==0 (
 )
 
 echo Creating new environment...
-call "%CONDA_PATH%" create -y -q -n PurePlay-Anti-Cheat python
+call "%CONDA_PATH%" create -y -q -n PurePlay-Anti-Cheat -c pytorch python
 if errorlevel 1 (
     echo Failed to create the environment.
     pause
@@ -89,16 +89,16 @@ if errorlevel 1 (
     exit /b
 )
 
-echo Installing PyTorch with Nvidia binaries...
-call "%CONDA_PATH%" install -y -q -c pytorch pytorch
+echo Installing conda packages...
+call "%CONDA_PATH%" install -y -q pytorch pandas optuna pyautogui matplotlib
 if errorlevel 1 (
-    echo Failed to install PyTorch with Nvidia binaries.
+    echo Failed to install conda packages.
     pause
     exit /b
 )
 
 echo Installing pip packages...
-call pip install XInput-Python mouse keyboard pandas matplotlib pyautogui optuna
+call pip install XInput-Python mouse keyboard
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause

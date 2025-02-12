@@ -2,6 +2,7 @@ import pyautogui
 import keyboard
 import XInput
 import mouse
+import time
 import math
 
 class Device:
@@ -38,9 +39,11 @@ class Keyboard(Device):
         if invalidFeatures:
             raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
 
-    def poll(self):
-        state = [1 if keyboard.is_pressed(feature) else 0 for feature in self.features]
-        self.sequence.append(state)
+    def start_poll_loop(self, recordEvent, killEvent):
+        while recordEvent.is_set() and not killEvent.is_set():
+            time.sleep(1 / self.pollingRate)
+            row = [1 if keyboard.is_pressed(feature) else 0 for feature in self.whitelist]
+            self.sequence.append(row)
 
 class Mouse(Device):
     def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
@@ -52,34 +55,44 @@ class Mouse(Device):
         invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
         if invalidFeatures:
             raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
-        self.lastPosition = None
+        self.lastPosition = []
         self.screenWidth, self.screenHeight = pyautogui.size()
         self.scale = min(self.screenWidth, self.screenHeight)
 
-    def poll(self):
-        state = [
-            1 if mouse.is_pressed(button='left') else 0,
-            1 if mouse.is_pressed(button='right') else 0,
-            1 if mouse.is_pressed(button='middle') else 0,
-        ]
-        currentPosition = mouse.get_position()
-        if self.lastPosition is not None:
-            deltaX = currentPosition[0] - self.lastPosition[0]
-            deltaY = currentPosition[1] - self.lastPosition[1]
-            deltaXNorm = deltaX / self.scale
-            deltaYNorm = deltaY / self.scale
-
-            normalizedAngle = math.atan2(deltaYNorm, deltaXNorm)
-            if normalizedAngle < 0:
-                normalizedAngle += 2 * math.pi
-
-            normalizedMagnitude = math.hypot(deltaXNorm, deltaYNorm)
-        else:
-            normalizedAngle = 0
-            normalizedMagnitude = 0
-        state.extend([normalizedAngle, normalizedMagnitude])
-        self.lastPosition = currentPosition
-        self.sequence.append(state)
+    def start_poll_loop(self, recordEvent, killEvent):
+        while recordEvent.is_set() and not killEvent.is_set():
+            time.sleep(1 / self.pollingRate)
+            row = []
+            if 'left' in self.whitelist:
+                row.append(1 if mouse.is_pressed(button='left') else 0)
+            if 'right' in self.whitelist:
+                row.append(1 if mouse.is_pressed(button='right') else 0)
+            if 'middle' in self.whitelist:
+                row.append(1 if mouse.is_pressed(button='middle') else 0)
+            if 'x1' in self.whitelist:
+                row.append(1 if mouse.is_pressed(button='x1') else 0)
+            if 'x2' in self.whitelist:
+                row.append(1 if mouse.is_pressed(button='x2') else 0)
+            if 'angle' in self.whitelist or 'magnitude' in self.whitelist:
+                currentPosition = mouse.get_position()
+                if self.lastPosition:
+                    deltaX = currentPosition[0] - self.lastPosition[0]
+                    deltaY = currentPosition[1] - self.lastPosition[1]
+                    deltaXNorm = deltaX / self.scale
+                    deltaYNorm = deltaY / self.scale
+                    normalizedAngle = math.atan2(deltaYNorm, deltaXNorm)
+                    if normalizedAngle < 0:
+                        normalizedAngle += 2 * math.pi
+                    normalizedMagnitude = math.hypot(deltaXNorm, deltaYNorm)
+                else:
+                    normalizedAngle = 0
+                    normalizedMagnitude = 0
+                if 'angle' in self.whitelist:
+                    row.append(normalizedAngle)
+                if 'magnitude' in self.whitelist:
+                    row.append(normalizedMagnitude)
+                self.lastPosition = currentPosition
+            self.sequence.append(row)
 
 class Gamepad(Device):
     def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
@@ -100,12 +113,28 @@ class Gamepad(Device):
         if not XInput.get_connected()[0]:
             print('No gamepad detected')
 
-    def poll(self):
+    def start_poll_loop(self, recordEvent, killEvent):
         if XInput.get_connected()[0]:
-            stateValues = list(XInput.get_button_values(XInput.get_state(0)).values())
-            state = [int(value) for value in stateValues]
-            state.extend(XInput.get_trigger_values(XInput.get_state(0)))
-            thumbValues = XInput.get_thumb_values(XInput.get_state(0))
-            state.extend(thumbValues[0])
-            state.extend(thumbValues[1])
-            self.sequence.append(state)
+            while recordEvent.is_set() and not killEvent.is_set():
+                time.sleep(1 / self.pollingRate)
+                state = XInput.get_state(0)
+                row = []
+                button_values = XInput.get_button_values(state)
+                for button, value in button_values.items():
+                    if button in self.whitelist:
+                        row.append(int(value))
+                trigger_values = XInput.get_trigger_values(state)
+                if "LT" in self.whitelist:
+                    row.append(trigger_values[0])
+                if "RT" in self.whitelist:
+                    row.append(trigger_values[1])
+                left_thumb, right_thumb = XInput.get_thumb_values(state)
+                if "LX" in self.whitelist:
+                    row.append(left_thumb[0])
+                if "LY" in self.whitelist:
+                    row.append(left_thumb[1])
+                if "RX" in self.whitelist:
+                    row.append(right_thumb[0])
+                if "RY" in self.whitelist:
+                    row.append(right_thumb[1])
+                self.sequence.append(row)

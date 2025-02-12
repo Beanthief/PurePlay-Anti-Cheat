@@ -30,7 +30,7 @@ These parameters control the high-level operation of the program.
 
 - **recordBind**  
   *Type:* String  
-  *Description:* This bind will toggle data collection. Can be any feature of any device.  
+  *Description:* This bind toggle data collection when held. Can be any feature of any device.  
   Note: This bind must not be included in any whitelists and cannot be the `killKey`.  
 
 - **killKey**  
