@@ -232,8 +232,8 @@ elif programMode == 1:
                 processor, 
                 device.whitelist, 
                 device.windowSize, 
-                trial.suggest_int('layers', 1, 3), 
-                trial.suggest_int('neurons', 16, 128, step=16), 
+                trial.suggest_int('layers', 1, 4), 
+                trial.suggest_int('neurons', 16, 256, step=16), 
                 trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
             ).to(processor)
             device.model.train_weights(trainLoader, trialEpochs)
@@ -250,6 +250,7 @@ elif programMode == 1:
             study.best_params['neurons'], 
             study.best_params['learningRate']
         ).to(processor)
+        print(f'Training final {device.deviceType} model')
         device.model.train_weights(trainLoader, finalEpochs)
         testLoss = device.model.get_test_loss(testLoader)
         print(f'Final test loss: {testLoss}')
@@ -268,7 +269,7 @@ elif programMode == 1:
         os.makedirs('models', exist_ok=True)
         modelPath = f'models/{device.deviceType}.pt'
         torch.save(modelPackage, modelPath)
-        print(f'{device.deviceType} saved.')
+        print(f'Final {device.deviceType} model saved.')
 
 # MODE 2: Live Analysis
 elif programMode == 2:
