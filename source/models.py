@@ -9,10 +9,10 @@ class LSTMAutoencoder(torch.nn.Module):
         self.layers = layers   # Do I want these to be the same across all layer-types?
         self.neurons = neurons # 
         self.lossFunction = torch.nn.MSELoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learningRate)
         self.encoderLstm = torch.nn.LSTM(features, neurons, layers, batch_first=True)
         self.decoderLstm = torch.nn.LSTM(neurons, neurons, layers, batch_first=True)
         self.outputLayer = torch.nn.Linear(neurons, features)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=learningRate)
 
     def forward(self, inputSequence):
         encoderOutputs, (hiddenState, cellState) = self.encoderLstm(inputSequence)
