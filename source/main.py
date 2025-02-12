@@ -141,7 +141,7 @@ def start_recording():
             if device.isCapturing:
                 threading.Thread(target=device.start_poll_loop, args=(recordEvent, killEvent)).start()
                 if programMode == 0:
-                    threading.Thread(target=start_save_loop, args=(device,)).start()
+                    threading.Thread(target=start_save_loop, args=(device,)).start() # Run at all times for proper time series
                 elif programMode == 2:
                     threading.Thread(target=start_analysis_loop, args=(device,)).start()
 def stop_recording():
@@ -206,7 +206,7 @@ elif programMode == 1:
                 elif filePollRate != device.pollingRate:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
                 fileData = pandas.read_csv(file)[device.whitelist]
-                dataList.append(fileData)
+                dataList.append(fileData) # Consider how appending files to each other breaks the time series
         
         if not dataList:
             print(f'No {device.deviceType} data. Skipping...')
