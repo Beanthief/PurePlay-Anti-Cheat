@@ -52,6 +52,16 @@ These parameters control device and data characteristics.
   *Description:*  
   A list of input features to be used for training. If left empty, all available features for that device are used. This setting is ignored in mode 0.  
   **Caution:** Do not include the `killKey` in the keyboardWhitelist.
+  *Possible Values:*  
+  Keyboard:  
+  `a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, +, -, *, /, ., ,, <, >, ?, !, @, #, $, %, ^, &, *, (, ), _, =, {, }, [, ], |, \\, :, ;, , , ~, enter, esc, backspace, tab, space, caps lock, num lock, scroll lock, home, end, page up, page down, insert, delete, left, right, up, down, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, print screen, pause, break, windows, menu, right alt, ctrl, left shift, right shift, left windows, left alt, right windows, alt gr, windows, alt, shift, right ctrl, left ctrl`  
+
+  Mouse:  
+  Note: angle and magnitude are relative to the previous poll  
+  `left, right, middle, x1, x2, angle, magnitude`  
+
+  Gamepad:  
+  `DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, START, BACK, LEFT_THUMB, RIGHT_THUMB, LEFT_SHOULDER, RIGHT_SHOULDER, A, B, X, Y, LT, RT, LX, LY, RX, RY`
 
 - **pollingRate**  
   *Type:* Integer (hz)  
@@ -69,7 +79,6 @@ These parameters control device and data characteristics.
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
   - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
-
 
 ### Training Section
 
