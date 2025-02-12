@@ -18,33 +18,35 @@ import os
 
 configParser = configparser.ConfigParser()
 configParser.read('config.ini')
-programMode =          int(configParser['General']['programMode'])
-killKey =              str(configParser['General']['killKey'])
+programMode =        int(configParser['General']['programMode'])
+killKey =            str(configParser['General']['killKey'])
 
-captureKeyboard =      int(configParser['Keyboard']['captureKeyboard'])
-keyboardWhitelist =    str(configParser['Keyboard']['keyboardWhitelist']).split(',')
-keyboardPollRate =     int(configParser['Keyboard']['pollingRate'])
+captureKeyboard =    int(configParser['Keyboard']['capture'])
+keyboardWhitelist =  str(configParser['Keyboard']['whitelist']).split(',')
+keyboardPollRate =   int(configParser['Keyboard']['pollingRate'])
+keyboardWindowSize = int(configParser['Keyboard']['windowSize'])
 
-captureMouse =         int(configParser['Mouse']['captureMouse'])
-mouseWhitelist =       str(configParser['Mouse']['mouseWhitelist']).split(',')
-mousePollRate =        int(configParser['Mouse']['pollingRate'])
+captureMouse =       int(configParser['Mouse']['capture'])
+mouseWhitelist =     str(configParser['Mouse']['whitelist']).split(',')
+mousePollRate =      int(configParser['Mouse']['pollingRate'])
+mouseWindowSize =    int(configParser['Mouse']['windowSize'])
 
-captureGamepad =       int(configParser['Gamepad']['captureGamepad'])
-gamepadWhitelist =     str(configParser['Gamepad']['gamepadWhitelist']).split(',')
-gamepadPollRate =      int(configParser['Gamepad']['pollingRate'])
+captureGamepad =     int(configParser['Gamepad']['capture'])
+gamepadWhitelist =   str(configParser['Gamepad']['whitelist']).split(',')
+gamepadPollRate =    int(configParser['Gamepad']['pollingRate'])
+gamepadWindowSize =  int(configParser['Gamepad']['windowSize'])
 
-windowSize =           int(configParser['Model']['windowSize'])
-finalEpochs =          int(configParser['Model']['finalEpochs'])
-trialEpochs =          int(configParser['Model']['trialEpochs'])
-tuningTrials =         int(configParser['Model']['tuningTrials'])
+trialEpochs =        int(configParser['Training']['trialEpochs'])
+tuningTrials =       int(configParser['Training']['tuningTrials'])
+finalEpochs =        int(configParser['Training']['finalEpochs'])
 
 processor = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Using processor: {processor}')
 
 deviceList = (
-    devices.Keyboard(captureKeyboard, keyboardWhitelist, keyboardPollRate),
-    devices.Mouse(captureMouse, mouseWhitelist, mousePollRate),
-    devices.Gamepad(captureGamepad, gamepadWhitelist, gamepadPollRate)
+    devices.Keyboard(captureKeyboard, keyboardWhitelist, keyboardPollRate, keyboardWindowSize),
+    devices.Mouse(captureMouse, mouseWhitelist, mousePollRate, mouseWindowSize),
+    devices.Gamepad(captureGamepad, gamepadWhitelist, gamepadPollRate, gamepadWindowSize)
 )
 
 if killKey in deviceList[0].whitelist:
@@ -95,7 +97,7 @@ keyboard.add_hotkey(killKey, killCallback)
 if programMode == 0:
     # def start_save_loop(device):
     #     os.makedirs('data', exist_ok=True)
-    #     filePath = f'data/{device.deviceType}_{device.pollInterval}_{time.strftime('%Y%m%d-%H%M%S')}.csv'
+    #     filePath = f'data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv'
     #     if not os.path.isfile(filePath):
     #         with open(filePath, 'w', newline='') as fileHandle:
     #             writer = csv.writer(fileHandle)
@@ -111,7 +113,7 @@ if programMode == 0:
     # Testing dynamic saveInterval (my brain not mathing)
     def start_save_loop(device):
         os.makedirs('data', exist_ok=True)
-        filePath = f"data/{device.deviceType}_{device.pollInterval}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+        filePath = f"data/{device.deviceType}_{device.pollingRate}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
         if not os.path.isfile(filePath):
             with open(filePath, 'w', newline='') as file:
                 csv.writer(file).writerow(device.features)
@@ -155,13 +157,16 @@ if programMode == 0:
 # MODE 1: Model Training
 elif programMode == 1:
     # Collect all csv files
-    files = [
-        os.path.join('data', fileName)
-        for fileName in os.listdir('data')
-        if os.path.isfile(os.path.join('data', fileName)) and fileName.endswith('.csv')
-    ]
-    if not files:
-        raise ValueError('No data files found. Exiting...')
+    try:
+        files = [
+            os.path.join('data', fileName)
+            for fileName in os.listdir('data')
+            if os.path.isfile(os.path.join('data', fileName)) and fileName.endswith('.csv')
+        ]
+        if not files:
+            raise ValueError('No data files found. Exiting...')
+    except:
+        raise ValueError('Error: Missing data directory. Exiting...')
     
     for device in deviceList:
         # Data validation
@@ -173,10 +178,10 @@ elif programMode == 1:
                 print(f'Invalid data file: {fileName}')
                 continue
             if parts[0] == device.deviceType:
-                filePollInterval = int(parts[1])
-                if device.pollInterval is None:
-                    device.pollInterval = filePollInterval
-                elif filePollInterval != device.pollInterval:
+                filePollRate = int(parts[1])
+                if device.pollingRate is None:
+                    device.pollingRate = filePollRate
+                elif filePollRate != device.pollingRate:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
                 fileData = pandas.read_csv(file)[device.whitelist]
                 dataList.append(fileData)
@@ -203,7 +208,7 @@ elif programMode == 1:
             layers = trial.suggest_int('layers', 1, 3)
             neurons = trial.suggest_int('neurons', 16, 128, step=16)
             learningRate = trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
-            device.model = models.LSTMAutoencoder(processor, device.whitelist, windowSize, layers, neurons, learningRate).to(processor)
+            device.model = models.LSTMAutoencoder(processor, device.whitelist, device.windowSize, layers, neurons, learningRate).to(processor)
             device.model.train_model(trainLoader, trialEpochs, trial)
             return device.model.get_validation_loss(validationLoader)
         study = optuna.create_study(direction='minimize')
@@ -213,7 +218,7 @@ elif programMode == 1:
         device.model = models.LSTMAutoencoder(
             processor, 
             device.whitelist, 
-            windowSize, 
+            device.windowSize, 
             study.best_params['layers'], 
             study.best_params['neurons'], 
             study.best_params['learningRate']
@@ -224,7 +229,7 @@ elif programMode == 1:
         # Save model and metadata
         metadata = {
             'features': device.whitelist,
-            'pollInterval': device.pollInterval,
+            'pollingRate': device.pollingRate,
             'windowSize': device.windowSize,
             'hyperparameters': study.best_params
         }
@@ -265,7 +270,7 @@ elif programMode == 2:
         try:
             modelPackage = torch.load(f'models/{device.deviceType}.pt')
             device.whitelist = modelPackage['metadata']['features']
-            device.pollInterval = modelPackage['metadata']['pollInterval']
+            device.pollingRate = modelPackage['metadata']['pollingRate']
             device.windowSize = modelPackage['metadata']['windowSize']
             device.model = modelPackage['model'].to(processor)
             device.model.eval()

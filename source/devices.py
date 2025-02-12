@@ -5,18 +5,19 @@ import mouse
 import math
 
 class Device:
-    def __init__(self, isCapturing, whitelist, pollingRate):
+    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
         self.deviceType = ''
         self.isCapturing = isCapturing
         self.whitelist = whitelist
         self.pollingRate = pollingRate
+        self.windowSize = windowSize
         self.sequence = []
         self.model = None
         self.anomalyHistory = []
 
 class Keyboard(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollingRate):
-        super(Keyboard, self).__init__(isCapturing, whitelist, windowSize, pollingRate)
+    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
+        super(Keyboard, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
         self.deviceType = 'keyboard'
         self.features = [
             'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -42,8 +43,8 @@ class Keyboard(Device):
         self.sequence.append(state)
 
 class Mouse(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollingRate):
-        super(Mouse, self).__init__(isCapturing, whitelist, windowSize, pollingRate)
+    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
+        super(Mouse, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
         self.deviceType = 'mouse'
         self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseAngle', 'mouseMagnitude']
         if self.whitelist == ['']:
@@ -81,8 +82,8 @@ class Mouse(Device):
         self.sequence.append(state)
 
 class Gamepad(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollingRate):
-        super(Gamepad, self).__init__(isCapturing, whitelist, windowSize, pollingRate)
+    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
+        super(Gamepad, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
         self.deviceType = 'gamepad'
         self.features = [
             'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT',

@@ -57,25 +57,19 @@ These parameters control device and data characteristics.
   - A lower polling rate reduces data size and processing load but might miss short-lived events.
   - As you change polling rate, consider changing windowSize as the scope of sequences is relative to this setting.
 
-### Model Section
-
-These parameters guide the training and feature selection process.  
-It is recommended that you first attempt to train with the default parameters.
-
-- **windowSize**  
-  *Type:* Integer  
+  - **windowSize**  
+  *Type:* Integer (>= 5)  
   (OVERWRITTEN BY LOADED MODEL)  
   *Description:* The number of time steps in an input sequence.  
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
   - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
 
-- **finalEpochs**  
-  *Type:* Integer  
-  *Description:* The number of epochs used to train tuned model.
-  *Impact:*  
-  - **More epochs:** Increases accuracy and training time, risks overfitting
-  - **Less epochs:** Reduces accuracy and training time, risks underfitting
+
+### Training Section
+
+These parameters guide the training and feature selection process.  
+It is recommended that you first attempt to train with the default parameters.
 
   - **trialEpochs**  
   *Type:* Integer  
@@ -93,6 +87,13 @@ It is recommended that you first attempt to train with the default parameters.
   - Number of LSTM layers (`layerCount`)
   - Neuron count per layer (`neuronCount`)
   - Learning rate (`learningRate`)
+
+  - **finalEpochs**  
+  *Type:* Integer  
+  *Description:* The number of epochs used to train tuned model.
+  *Impact:*  
+  - **More epochs:** Increases accuracy and training time, risks overfitting
+  - **Less epochs:** Reduces accuracy and training time, risks underfitting
 
 ---
 
@@ -184,6 +185,6 @@ The anomaly graph displays computed anomaly scores over successive time windows.
 
 This documentation aims to provide you with a thorough understanding of the configuration settings and the rationale behind them. By carefully considering the properties of your training data and the impact of each parameter, you can intelligently fine-tune the system to meet your specific needs. Remember, with automatic hyperparameter tuning in the background, your focus can primarily be on optimizing data quality and feature selection for the best overall performance.
 
-For further details, consult the inline comments within the source code and the [Optuna documentation](https://optuna.org/) for more on hyperparameter optimization.
+For further details, consult the inline comments within the source code and the [Optuna documentation](https://optuna.readthedocs.io/en/stable/index.html) for more on hyperparameter optimization.
 
 ---
