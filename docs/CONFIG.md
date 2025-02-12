@@ -7,7 +7,7 @@ This document provides an in-depth explanation of the configuration options, dat
 ## 1. Overview
 
 The system has three primary modes of operation:
-- **Data Collection:** Captures input data from specified devices at defined intervals.
+- **Data Collection:** Captures input data from specified devices at a defined rate.
 - **Model Training:** Processes collected data, updates existing models and trains new models with automatic hyperparameter tuning.
 - **Live Analysis:** Uses the trained model to analyze incoming data in real-time and compute anomaly scores.
 
@@ -173,7 +173,7 @@ The anomaly graph displays computed anomaly scores over successive time windows.
   Verify that your data is clean and representative. Remove anomalies or outliers where possible to improve training quality. You may want to tie capture states to game states so UI navigation and typing won't interfere.
 
 - **Iterative Refinement:**  
-  Start with moderate settings for `windowSize` and `pollInterval`, and adjust based on early training results and model performance.
+  Start with moderate settings for `windowSize` and `pollingRate`, and adjust based on early training results and model performance.
 
 - **Balanced Feature Selection:**  
   Experiment with different whitelists to determine which features contribute most effectively to the model’s performance.
