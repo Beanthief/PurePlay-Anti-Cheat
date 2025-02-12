@@ -206,7 +206,8 @@ elif programMode == 1:
                 elif filePollRate != device.pollingRate:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
                 fileData = pandas.read_csv(file)[device.whitelist]
-                dataList.append(fileData) # Consider how appending files to each other breaks the time series
+                if fileData.shape[0] > 0:
+                    dataList.append(fileData) # Consider how appending files to each other breaks the time series
         
         if not dataList:
             print(f'No {device.deviceType} data. Skipping...')
@@ -255,7 +256,7 @@ elif programMode == 1:
 
         # Save model and metadata
         metadata = {
-            'features': device.whitelist,
+            'whitelist': device.whitelist,
             'pollingRate': device.pollingRate,
             'windowSize': device.windowSize,
             'hyperparameters': study.best_params
@@ -275,7 +276,7 @@ elif programMode == 2:
         if device.isCapturing:
             try:
                 modelPackage = torch.load(f'models/{device.deviceType}.pt')
-                device.whitelist = modelPackage['metadata']['features']
+                device.whitelist = modelPackage['metadata']['whitelist']
                 device.pollingRate = modelPackage['metadata']['pollingRate']
                 device.windowSize = modelPackage['metadata']['windowSize']
                 device.model = modelPackage['model'].to(processor).eval()

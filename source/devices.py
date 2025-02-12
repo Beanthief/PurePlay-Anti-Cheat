@@ -41,9 +41,9 @@ class Keyboard(Device):
 
     def start_poll_loop(self, recordEvent, killEvent):
         while recordEvent.is_set() and not killEvent.is_set():
-            time.sleep(1 / self.pollingRate)
             row = [1 if keyboard.is_pressed(feature) else 0 for feature in self.whitelist]
             self.sequence.append(row)
+            time.sleep(1 / self.pollingRate)
 
 class Mouse(Device):
     def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
@@ -61,7 +61,6 @@ class Mouse(Device):
 
     def start_poll_loop(self, recordEvent, killEvent):
         while recordEvent.is_set() and not killEvent.is_set():
-            time.sleep(1 / self.pollingRate)
             row = []
             if 'left' in self.whitelist:
                 row.append(1 if mouse.is_pressed(button='left') else 0)
@@ -93,6 +92,7 @@ class Mouse(Device):
                     row.append(normalizedMagnitude)
                 self.lastPosition = currentPosition
             self.sequence.append(row)
+            time.sleep(1 / self.pollingRate)
 
 class Gamepad(Device):
     def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
@@ -116,7 +116,6 @@ class Gamepad(Device):
     def start_poll_loop(self, recordEvent, killEvent):
         if XInput.get_connected()[0]:
             while recordEvent.is_set() and not killEvent.is_set():
-                time.sleep(1 / self.pollingRate)
                 state = XInput.get_state(0)
                 row = []
                 button_values = XInput.get_button_values(state)
@@ -138,3 +137,4 @@ class Gamepad(Device):
                 if "RY" in self.whitelist:
                     row.append(right_thumb[1])
                 self.sequence.append(row)
+                time.sleep(1 / self.pollingRate)

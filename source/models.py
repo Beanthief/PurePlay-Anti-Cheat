@@ -1,17 +1,18 @@
 import torch
 
 class LSTMAutoencoder(torch.nn.Module):
-    def __init__(self, processor, features, windowSize, layers, neurons, learningRate):
+    def __init__(self, processor, whitelist, windowSize, layers, neurons, learningRate):
         super(LSTMAutoencoder, self).__init__()
         self.processor = processor
-        self.features = features
+        self.whitelist = whitelist
+        self.features = len(self.whitelist)
         self.windowSize = windowSize
         self.layers = layers   # Do I want these to be the same across all layer-types?
         self.neurons = neurons # 
         self.lossFunction = torch.nn.MSELoss()
-        self.encoderLstm = torch.nn.LSTM(features, neurons, layers, batch_first=True)
+        self.encoderLstm = torch.nn.LSTM(self.features, neurons, layers, batch_first=True)
         self.decoderLstm = torch.nn.LSTM(neurons, neurons, layers, batch_first=True)
-        self.outputLayer = torch.nn.Linear(neurons, features)
+        self.outputLayer = torch.nn.Linear(neurons, self.features)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=learningRate)
 
     def forward(self, inputSequence):
