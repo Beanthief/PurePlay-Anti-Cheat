@@ -72,7 +72,7 @@ These parameters control device and data characteristics.
   - A lower polling rate reduces data size and processing load but might miss short-lived events.
   - As you change polling rate, consider changing windowSize as the scope of sequences is relative to this setting.
 
-  - **windowSize**  
+- **windowSize**  
   *Type:* Integer (>= 5)  
   (OVERWRITTEN BY LOADED MODEL)  
   *Description:* The number of time steps in an input sequence.  
@@ -85,7 +85,7 @@ These parameters control device and data characteristics.
 These parameters guide the training and feature selection process.  
 It is recommended that you first attempt to train with the default parameters.
 
-  - **trialEpochs**  
+- **trialEpochs**  
   *Type:* Integer  
   *Description:* The number of epochs per trial.
   *Impact:*  
@@ -102,7 +102,7 @@ It is recommended that you first attempt to train with the default parameters.
   - Neuron count per layer (`neuronCount`)
   - Learning rate (`learningRate`)
 
-  - **finalEpochs**  
+- **finalEpochs**  
   *Type:* Integer  
   *Description:* The number of epochs used to train tuned model.
   *Impact:*  
