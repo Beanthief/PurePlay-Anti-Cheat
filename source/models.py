@@ -1,3 +1,4 @@
+import optuna
 import torch
 
 class LSTMAutoencoder(torch.nn.Module):
@@ -25,9 +26,11 @@ class LSTMAutoencoder(torch.nn.Module):
         reconstructedSequence = self.outputLayer(decoderOutputs)
         return reconstructedSequence
 
-    def train_weights(self, dataLoader, epochs):
+    def train_weights(self, dataLoader, epochs, trial=None):
+        self.train()
         for epoch in range(epochs):
-            self.train()
+            if trial and trial.should_prune():
+                raise optuna.TrialPruned()
             for inputBatch, targetBatch in dataLoader:
                 inputBatch = inputBatch.to(self.processor)
                 targetBatch = targetBatch.to(self.processor)

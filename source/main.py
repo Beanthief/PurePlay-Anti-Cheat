@@ -236,7 +236,7 @@ elif programMode == 1:
                 trial.suggest_int('neurons', 16, 256, step=16), 
                 trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
             ).to(processor)
-            device.model.train_weights(trainLoader, trialEpochs)
+            device.model.train_weights(trainLoader, trialEpochs, trial)
             return device.model.get_test_loss(testLoader)
         study = optuna.create_study(direction='minimize')
         study.optimize(objective, n_trials=tuningTrials)
