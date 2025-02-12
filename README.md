@@ -21,7 +21,7 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    - Client-side processing only; may need manual review or automated filtering for results.
 
 2. **Server-Only Model (NOT IMPLEMENTED)**:
-   - Requires AI acceleration hardware on servers, which may be costly but reduces client performance impacts.
+   - Requires AI-capable hardware on servers, which may be costly but reduces client performance impacts.
    - Integration with the game engine required for networked view angles.
 
 3. **Combined Model (NOT IMPLEMENTED)**:
