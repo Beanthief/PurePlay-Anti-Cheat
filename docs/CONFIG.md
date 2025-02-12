@@ -52,7 +52,7 @@ These parameters control device and data characteristics.
   *Description:*  
   A list of input features to be used for training. If left empty, all available features for that device are used. This setting is ignored in mode 0. Do not include the `killKey` in the keyboardWhitelist.  
   
-  **Possible Values:**
+  **Possible Values:**  
   Keyboard:  
   `a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, +, -, *, /, ., ,, <, >, ?, !, @, #, $, %, ^, &, *, (, ), _, =, {, }, [, ], |, \\, :, ;, , , ~, enter, esc, backspace, tab, space, caps lock, num lock, scroll lock, home, end, page up, page down, insert, delete, left, right, up, down, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, print screen, pause, break, windows, menu, right alt, ctrl, left shift, right shift, left windows, left alt, right windows, alt gr, windows, alt, shift, right ctrl, left ctrl`  
 
