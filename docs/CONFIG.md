@@ -28,6 +28,11 @@ These parameters control the high-level operation of the program.
   - `1` — Model Training  
   - `2` — Live Analysis  
 
+- **recordBind**  
+  *Type:* String  
+  *Description:* The bind that, when pressed, will terminate the program. Can be any feature of any device.  
+  **Important:** This bind must not be included in any whitelists.
+
 - **killKey**  
   *Type:* String  
   *Description:* The key that, when pressed, will terminate the program.  
