@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for tasks such as anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, learning rate, and training epochs without manually setting them.
+This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for tasks such as anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, and learning rate without manually setting them.
 
 ---
 
@@ -11,7 +11,7 @@ The system has three primary modes of operation:
 - **Model Training:** Processes collected data, updates existing models and trains new models with automatic hyperparameter tuning.
 - **Live Analysis:** Uses the trained model to analyze incoming data in real-time and compute anomaly scores.
 
-The configuration parameters are stored in a file called `config.ini`, which is divided into two sections: **General** and **Model**.
+The configuration parameters are stored in a file called `config.ini`, which is divided into five sections: **General**, **Keyboard**, **Mouse**, **Gamepad** and **Model**.
 
 ---
 
@@ -19,7 +19,7 @@ The configuration parameters are stored in a file called `config.ini`, which is 
 
 ### General Section
 
-These parameters control the high-level operation and data collection aspects:
+These parameters control the high-level operation of the program.
 
 - **programMode**  
   *Type:* Integer  
@@ -28,68 +28,71 @@ These parameters control the high-level operation and data collection aspects:
   - `1` — Model Training  
   - `2` — Live Analysis  
 
-- **pollInterval**  
-  *Type:* Integer (milliseconds)  
-  *Description:* Defines the time between device polls.  
-  *Impact:*  
-  - A shorter poll interval results in higher temporal resolution and more data points.
-  - A longer poll interval reduces data size and processing load but might miss short-lived events.
-  - As you change pollInterval, consider changing windowSize as the scope of sequences is relative to this setting.
-
-- **captureKeyboard**  
-  *Type:* Integer (0 or 1)  
-  *Description:* Toggle to enable (`1`) or disable (`0`) keyboard data capture.
-
-- **captureMouse**  
-  *Type:* Integer (0 or 1)  
-  *Description:* Toggle to enable (`1`) or disable (`0`) mouse data capture.
-
-- **captureGamepad**  
-  *Type:* Integer (0 or 1)  
-  *Description:* Toggle to enable (`1`) or disable (`0`) gamepad data capture.
-
 - **killKey**  
   *Type:* String  
   *Description:* The key that, when pressed, will terminate the program.  
-  **Important:** This key must not be included in any device’s whitelist.
+  **Important:** This key must not be included in keyboardWhitelist.
+
+### Device Sections
+
+These parameters control device and data characteristics.
+
+- **capture(Device)**  
+  *Type:* Integer (0 or 1)  
+  *Description:* Toggle to enable (`1`) or disable (`0`) data capture on that device.  
+
+- **(device)Whitelist**  
+  *Type:* Comma-separated String  
+  (OVERWRITTEN BY LOADED MODEL)  
+  *Description:*  
+  A list of input features to be used for training. If left empty, all available features for that device are used. This setting is ignored in mode 0.  
+  **Caution:** Do not include the `killKey` in the keyboardWhitelist.
+
+- **pollingRate**  
+  *Type:* Integer (hz)  
+  (OVERWRITTEN BY LOADED MODEL)  
+  *Description:* Defines the rate of device polling. It is not recommended to go over 125hz.  
+  *Impact:*  
+  - A higher polling rate results in higher temporal resolution and more data points.
+  - A lower polling rate reduces data size and processing load but might miss short-lived events.
+  - As you change polling rate, consider changing windowSize as the scope of sequences is relative to this setting.
 
 ### Model Section
 
-These parameters guide the training and feature selection process:
+These parameters guide the training and feature selection process.  
+It is recommended that you first attempt to train with the default parameters.
 
 - **windowSize**  
   *Type:* Integer  
+  (OVERWRITTEN BY LOADED MODEL)  
   *Description:* The number of time steps in an input sequence.  
   *Impact:*  
   - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
   - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
 
-- **tuningCycles**  
+- **finalEpochs**  
   *Type:* Integer  
-  *Description:* The number of cycles through the automatic tuning process.  
+  *Description:* The number of epochs used to train tuned model.
   *Impact:*  
-  More tuning cycles allows the training loop to explore a larger hyperparameter space for higher accuracy.
+  - **More epochs:** Increases accuracy and training time, risks overfitting
+  - **Less epochs:** Reduces accuracy and training time, risks underfitting
+
+  - **trialEpochs**  
+  *Type:* Integer  
+  *Description:* The number of epochs per trial.
+  *Impact:*  
+  - **More epochs:** Increases tuning time, provides slightly more accurate tuning
+  - **Less epochs:** Reduces tuning time, provides slightly less accurate tuning
+
+- **tuningTrials**  
+  *Type:* Integer  
+  *Description:* The number of trials through the automatic tuning process.  
+  *Impact:*  
+  More tuning trials allows the training loop to explore a larger hyperparameter space for higher accuracy.
   **Note:** The hyperparameter tuning process automatically optimizes parameters such as:
   - Number of LSTM layers (`layerCount`)
   - Neuron count per layer (`neuronCount`)
   - Learning rate (`learningRate`)
-  - Number of training epochs (`trainingEpochs`)
-
-- **keyboardWhitelist**  
-  *Type:* Comma-separated String  
-  *Description:*  
-  A list of keyboard keys (features) to be used for training. If left empty, all available keys are used by default.  
-  **Caution:** Do not include the `killKey` here.
-
-- **mouseWhitelist**  
-  *Type:* Comma-separated String  
-  *Description:*  
-  Specifies which mouse features to capture (e.g., clicks, movement attributes). If left empty, all default mouse features are used.
-
-- **gamepadWhitelist**  
-  *Type:* Comma-separated String  
-  *Description:*  
-  Specifies which gamepad features to capture. If left empty, all default gamepad features are used.
 
 ---
 
@@ -170,7 +173,7 @@ The anomaly graph displays computed anomaly scores over successive time windows.
   Experiment with different whitelists to determine which features contribute most effectively to the model’s performance.
 
 - **Resource Consideration:**  
-  Keep in mind the trade-off between model accuracy and computational cost. More tuning cycles and larger window sizes can improve performance but at a higher resource cost.
+  Keep in mind the trade-off between model accuracy and computational cost. More tuning trials and larger window sizes can improve performance but at a higher resource cost.
 
 - **Continuous Monitoring:**
   Use the anomaly graphs (in live analysis mode) to continually assess and refine the model configuration.

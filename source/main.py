@@ -1,15 +1,13 @@
 import configparser
 import matplotlib
-import pyautogui
 import threading
 import keyboard
+import devices
 import optuna
 import pandas
-import XInput
+import models
 import numpy
 import torch
-import mouse
-import math
 import time
 import csv
 import os
@@ -20,165 +18,37 @@ import os
 
 configParser = configparser.ConfigParser()
 configParser.read('config.ini')
+programMode =          int(configParser['General']['programMode'])
+killKey =              str(configParser['General']['killKey'])
 
-# General configurations
-programMode =       int(configParser['General']['programMode'])     # 0 = Data Collection, 1 = Model Training, 2 = Live Analysis
-pollInterval =      int(configParser['General']['pollInterval'])    # time between polls in milliseconds (collection mode only)
-captureKeyboard =   int(configParser['General']['captureKeyboard']) # toggle for keyboard capture
-captureMouse =      int(configParser['General']['captureMouse'])    # toggle for mouse capture
-captureGamepad =    int(configParser['General']['captureGamepad'])  # toggle for gamepad capture
-killKey =           str(configParser['General']['killKey'])         # key to close program (cannot be in keyboardWhitelist)
+captureKeyboard =      int(configParser['Keyboard']['captureKeyboard'])
+keyboardWhitelist =    str(configParser['Keyboard']['keyboardWhitelist']).split(',')
+keyboardPollRate =     int(configParser['Keyboard']['pollingRate'])
 
-# Model configurations (will be overwritten by model metadata if available)
-windowSize =        int(configParser['Model']['windowSize'])        # size of input sequences for training (affects graph resolution and pattern precision)
-tuningCycles =      int(configParser['Model']['tuningCycles'])      # number of hyperparameter tuning cycles (higher = more accurate, slower)
-keyboardWhitelist = str(configParser['Model']['keyboardWhitelist']).split(',') #
-mouseWhitelist =    str(configParser['Model']['mouseWhitelist']).split(',')    # features to train on
-gamepadWhitelist =  str(configParser['Model']['gamepadWhitelist']).split(',')  # 
+captureMouse =         int(configParser['Mouse']['captureMouse'])
+mouseWhitelist =       str(configParser['Mouse']['mouseWhitelist']).split(',')
+mousePollRate =        int(configParser['Mouse']['pollingRate'])
 
-# ------------------------
-# Device Classes
-# ------------------------
+captureGamepad =       int(configParser['Gamepad']['captureGamepad'])
+gamepadWhitelist =     str(configParser['Gamepad']['gamepadWhitelist']).split(',')
+gamepadPollRate =      int(configParser['Gamepad']['pollingRate'])
 
-class Device:
-    def __init__(self, isCapturing, whitelist, windowSize):
-        self.deviceType = ''
-        self.dataPath = ''
-        self.isCapturing = isCapturing
-        self.whitelist = whitelist
-        self.sequence = []
-        self.anomalyHistory = []
-        self.model = None
-        self.windowSize = windowSize
-        self.pollInterval = None
+windowSize =           int(configParser['Model']['windowSize'])
+finalEpochs =          int(configParser['Model']['finalEpochs'])
+trialEpochs =          int(configParser['Model']['trialEpochs'])
+tuningTrials =         int(configParser['Model']['tuningTrials'])
 
-class Keyboard(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollInterval):
-        super(Keyboard, self).__init__(isCapturing, whitelist, windowSize, pollInterval)
-        self.features = [
-            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-            'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '+', '-', '*', '/', '.', ',', '<', '>', '?', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '=', '{', '}', '[', ']', '|', '\\', ':', ';', "'", '"', '~',
-            'enter', 'esc', 'backspace', 'tab', 'space',
-            'caps lock', 'num lock', 'scroll lock',
-            'home', 'end', 'page up', 'page down', 'insert', 'delete',
-            'left', 'right', 'up', 'down',
-            'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
-            'print screen', 'pause', 'break', 'windows', 'menu',
-            'right alt', 'ctrl', 'left shift', 'right shift', 'left windows', 'left alt', 'right windows', 'alt gr', 'windows', 'alt', 'shift', 'right ctrl', 'left ctrl'
-        ]
-        self.deviceType = 'keyboard'
-        if killKey in self.whitelist:
-            raise ValueError(f'Error: Kill key \'{killKey}\' cannot be in the whitelist')
-        if self.whitelist == ['']:
-            self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
+processor = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using processor: {processor}')
 
-    def poll(self):
-        state = [1 if keyboard.is_pressed(feature) else 0 for feature in self.features]
-        self.sequence.append(state)
-
-class Mouse(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollInterval):
-        super(Mouse, self).__init__(isCapturing, whitelist, windowSize, pollInterval)
-        self.deviceType = 'mouse'
-        self.features = ['mouseLeft', 'mouseRight', 'mouseMiddle', 'mouseAngle', 'mouseMagnitude']
-        if self.whitelist == ['']:
-            self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
-        self.lastPosition = None
-        self.screenWidth, self.screenHeight = pyautogui.size()
-        self.scale = min(self.screenWidth, self.screenHeight)
-
-    def poll(self):
-        state = [
-            1 if mouse.is_pressed(button='left') else 0,
-            1 if mouse.is_pressed(button='right') else 0,
-            1 if mouse.is_pressed(button='middle') else 0,
-        ]
-        currentPosition = mouse.get_position()
-        if self.lastPosition is not None:
-            deltaX = currentPosition[0] - self.lastPosition[0]
-            deltaY = currentPosition[1] - self.lastPosition[1]
-            deltaXNorm = deltaX / self.scale
-            deltaYNorm = deltaY / self.scale
-
-            normalizedAngle = math.atan2(deltaYNorm, deltaXNorm)
-            if normalizedAngle < 0:
-                normalizedAngle += 2 * math.pi
-
-            normalizedMagnitude = math.hypot(deltaXNorm, deltaYNorm)
-        else:
-            normalizedAngle = 0
-            normalizedMagnitude = 0
-        state.extend([normalizedAngle, normalizedMagnitude])
-        self.lastPosition = currentPosition
-        self.sequence.append(state)
-
-class Gamepad(Device):
-    def __init__(self, isCapturing, whitelist, windowSize, pollInterval):
-        super(Gamepad, self).__init__(isCapturing, whitelist, windowSize, pollInterval)
-        self.deviceType = 'gamepad'
-        self.features = [
-            'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT',
-            'START', 'BACK',
-            'LEFT_THUMB', 'RIGHT_THUMB',
-            'LEFT_SHOULDER', 'RIGHT_SHOULDER',
-            'A', 'B', 'X', 'Y', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY'
-        ]
-        if self.whitelist == ['']:
-            self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
-        if not XInput.get_connected()[0]:
-            print('No gamepad detected')
-
-    def poll(self):
-        if XInput.get_connected()[0]:
-            stateValues = list(XInput.get_button_values(XInput.get_state(0)).values())
-            state = [int(value) for value in stateValues]
-            state.extend(XInput.get_trigger_values(XInput.get_state(0)))
-            thumbValues = XInput.get_thumb_values(XInput.get_state(0))
-            state.extend(thumbValues[0])
-            state.extend(thumbValues[1])
-            self.sequence.append(state)
-
-devices = (
-    Keyboard(captureKeyboard, keyboardWhitelist, windowSize),
-    Mouse(captureMouse, mouseWhitelist, windowSize),
-    Gamepad(captureGamepad, gamepadWhitelist, windowSize)
+deviceList = (
+    devices.Keyboard(captureKeyboard, keyboardWhitelist, keyboardPollRate),
+    devices.Mouse(captureMouse, mouseWhitelist, mousePollRate),
+    devices.Gamepad(captureGamepad, gamepadWhitelist, gamepadPollRate)
 )
 
-# ------------------------
-# LSTM Autoencoder Model Definition
-# ------------------------
-
-class LSTMAutoencoder(torch.nn.Module):
-    def __init__(self, inputDimension, neuronCount, layerCount, windowSize):
-        super(LSTMAutoencoder, self).__init__()
-        self.inputDimension = inputDimension
-        self.neuronCount = neuronCount
-        self.layerCount = layerCount
-        self.windowSize = windowSize
-        self.encoderLstm = torch.nn.LSTM(inputDimension, neuronCount, layerCount, batch_first=True)
-        self.decoderLstm = torch.nn.LSTM(neuronCount, neuronCount, layerCount, batch_first=True)
-        self.outputLayer = torch.nn.Linear(neuronCount, inputDimension)
-
-    def forward(self, inputSequence):
-        encoderOutputs, (hiddenState, cellState) = self.encoderLstm(inputSequence)
-        batchSize = inputSequence.size(0)
-        decoderInput = torch.zeros(batchSize, self.windowSize, self.neuronCount)
-        if inputSequence.is_cuda:
-            decoderInput = decoderInput.cuda()
-        decoderOutputs, _ = self.decoderLstm(decoderInput, (hiddenState, cellState))
-        reconstructedSequence = self.outputLayer(decoderOutputs)
-        return reconstructedSequence
+if killKey in deviceList[0].whitelist:
+    raise ValueError(f'Error: Kill key \'{killKey}\' cannot be in the whitelist')
 
 # ------------------------
 # Data Utilities
@@ -223,38 +93,68 @@ keyboard.add_hotkey(killKey, killCallback)
 
 # MODE 0: Data Collection
 if programMode == 0:
-    def save_sequence(device, filePath):
+    # def start_save_loop(device):
+    #     os.makedirs('data', exist_ok=True)
+    #     filePath = f'data/{device.deviceType}_{device.pollInterval}_{time.strftime('%Y%m%d-%H%M%S')}.csv'
+    #     if not os.path.isfile(filePath):
+    #         with open(filePath, 'w', newline='') as fileHandle:
+    #             writer = csv.writer(fileHandle)
+    #             writer.writerow(device.features)
+    #     with open(filePath, 'a', newline='') as fileHandle:
+    #         writer = csv.writer(fileHandle)
+    #         while not killEvent.is_set():
+    #             time.sleep(device.saveInterval)
+    #             for state in device.sequence:
+    #                 writer.writerow(state)
+    #             device.sequence = []
+
+    # Testing dynamic saveInterval (my brain not mathing)
+    def start_save_loop(device):
         os.makedirs('data', exist_ok=True)
-        with device.saveLock:
-            if not os.path.isfile(filePath):
-                with open(filePath, 'w', newline='') as fileHandle:
-                    writer = csv.writer(fileHandle)
-                    writer.writerow(device.features)
-            with open(filePath, 'a', newline='') as fileHandle:
-                writer = csv.writer(fileHandle)
+        filePath = f"data/{device.deviceType}_{device.pollInterval}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+        if not os.path.isfile(filePath):
+            with open(filePath, 'w', newline='') as file:
+                csv.writer(file).writerow(device.features)
+        saveInterval = 5
+        writeTimes, intervals = [], []
+        lastWriteTime = time.time()
+        with open(filePath, 'a', newline='') as file:
+            writer = csv.writer(file)
+            while not killEvent.is_set():
+                time.sleep(saveInterval)
+                currentTime = time.time()
+                intervals.append(currentTime - lastWriteTime)
+                lastWriteTime = currentTime
+                startTime = time.time()
                 for state in device.sequence:
                     writer.writerow(state)
-            device.sequence = []
+                device.sequence = []
+                writeTimes.append(time.time() - startTime)
+                if len(writeTimes) == 10:
+                    averageWriteTime = sum(writeTimes) / 10
+                    averageInterval = sum(intervals) / 10
+                    saveInterval *= 1.1 if averageWriteTime > 0.3 * averageInterval else 0.9
+                    writeTimes.clear(); intervals.clear()
 
-    for device in devices:
-        device.dataPath = f'data/{device.deviceType}_{pollInterval}_{time.strftime("%Y%m%d-%H%M%S")}.csv'
-        device.saveLock = threading.Lock()
 
-    pollCounter = 0
-    while not killEvent.is_set():
-        time.sleep(pollInterval / 1000)
-        pollCounter += 1
-        for device in devices:
-            if device.isCapturing:
-                device.poll()
-        if pollCounter == (2 * 1000) // pollInterval: # Save every 2 seconds
-            for device in devices:
+    def start_poll_loop(device):
+        while not killEvent.is_set():
+            time.sleep(1 / device.pollingRate)
+            for device in deviceList:
                 if device.isCapturing:
-                    threading.Thread(target=save_sequence, args=(device, device.dataPath)).start()
-            pollCounter = 0
+                    device.poll()
+
+    for device in deviceList:
+        if device.isCapturing:
+            thread = threading.Thread(target=start_poll_loop, args=(device,)).start()
+
+    for device in deviceList:
+        if device.isCapturing:
+            threading.Thread(target=start_save_loop, args=(device, device.dataPath)).start()
 
 # MODE 1: Model Training
 elif programMode == 1:
+    # Collect all csv files
     files = [
         os.path.join('data', fileName)
         for fileName in os.listdir('data')
@@ -263,9 +163,9 @@ elif programMode == 1:
     if not files:
         raise ValueError('No data files found. Exiting...')
     
-    for device in devices:
-        deviceData = []
-        hasFiles = False
+    for device in deviceList:
+        # Data validation
+        dataList = []
         for file in files:
             fileName = os.path.basename(file)
             parts = fileName.split('_')
@@ -273,25 +173,24 @@ elif programMode == 1:
                 print(f'Invalid data file: {fileName}')
                 continue
             if parts[0] == device.deviceType:
-                hasFiles = True
                 filePollInterval = int(parts[1])
                 if device.pollInterval is None:
                     device.pollInterval = filePollInterval
                 elif filePollInterval != device.pollInterval:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
-            fileData = pandas.read_csv(file)[device.whitelist]
-            deviceData.append(fileData)
-        if not hasFiles:
-            print(f'No data files found for {device.deviceType}. Skipping...')
+                fileData = pandas.read_csv(file)[device.whitelist]
+                dataList.append(fileData)
+        
+        if not dataList:
+            print(f'No {device.deviceType} data. Skipping...')
+            continue
+        dataFrame = pandas.concat(dataList, ignore_index=True)
+        if dataFrame.shape[0] < device.windowSize:
+            print(f'Not enough data for {device.deviceType} to form a sequence. Skipping...')
             continue
 
-        dataFrame = pandas.concat(deviceData, ignore_index=True)
+        # Prepare data for training
         featureData = scaleData(dataFrame.to_numpy())
-
-        if len(featureData) < device.windowSize:
-            print(f"Not enough data for {device.deviceType} to form a sequence. Skipping...")
-            continue
-
         sequenceDataset = SequenceDataset(featureData, device.windowSize)
         validationSize = int(0.2 * len(sequenceDataset))
         trainSize = len(sequenceDataset) - validationSize
@@ -299,89 +198,50 @@ elif programMode == 1:
         trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True)
         validationLoader = torch.utils.data.DataLoader(validationDataset, batch_size=32)
 
-        os.makedirs('models', exist_ok=True)
-        modelPath = f'models/{device.deviceType}.pt'
-
+        # Automatic hyperparameter tuning
         def objective(trial):
-            trialLayerCount = trial.suggest_int("layerCount", 1, 3)
-            trialNeuronCount = trial.suggest_int("neuronCount", 16, 256, step=16)
-            trialLearningRate = trial.suggest_loguniform("learningRate", 1e-5, 1e-1)
-            trialTrainingEpochs = trial.suggest_int("trainingEpochs", 5, 50)
-            trialModel = LSTMAutoencoder(len(device.whitelist), trialNeuronCount, trialLayerCount, device.windowSize)
-            trialLossFunction = torch.nn.MSELoss()
-            trialOptimizer = torch.optim.Adam(trialModel.parameters(), lr=trialLearningRate)
-            for epoch in range(trialTrainingEpochs):
-                trialModel.train()
-                totalTrainLoss = 0.0
-                for inputBatch, targetBatch in trainLoader:
-                    trialOptimizer.zero_grad()
-                    predictions = trialModel(inputBatch)
-                    loss = trialLossFunction(predictions, targetBatch)
-                    loss.backward()
-                    trialOptimizer.step()
-                    totalTrainLoss += loss.item() * inputBatch.size(0)
-                # (Optional) You can compute the average training loss if desired:
-                averageTrainLoss = totalTrainLoss / trainSize
-                trialModel.eval()
-                totalValidationLoss = 0.0
-                with torch.no_grad():
-                    for inputBatch, targetBatch in validationLoader:
-                        predictions = trialModel(inputBatch)
-                        loss = trialLossFunction(predictions, targetBatch)
-                        totalValidationLoss += loss.item() * inputBatch.size(0)
-                averageValidationLoss = totalValidationLoss / validationSize
-                trial.report(averageValidationLoss, epoch)
-                if trial.should_prune():
-                    raise optuna.exceptions.TrialPruned()
-            return averageValidationLoss
-        study = optuna.create_study(direction="minimize")
-        study.optimize(objective, n_trials=tuningCycles)
-        print(f"Best hyperparameters for {device.deviceType}: {study.bestParams}")
-        bestParams = study.bestParams
-        bestModel = LSTMAutoencoder(len(device.whitelist),
-                                     bestParams["neuronCount"],
-                                     bestParams["layerCount"],
-                                     device.windowSize)
-        lossFunction = torch.nn.MSELoss()
-        optimizer = torch.optim.Adam(bestModel.parameters(), lr=bestParams["learningRate"])
-        for epoch in range(bestParams["trainingEpochs"]):
-            bestModel.train()
-            totalTrainLoss = 0.0
-            for inputBatch, targetBatch in trainLoader:
-                optimizer.zero_grad()
-                predictions = bestModel(inputBatch)
-                loss = lossFunction(predictions, targetBatch)
-                loss.backward()
-                optimizer.step()
-                totalTrainLoss += loss.item() * inputBatch.size(0)
-            averageTrainLoss = totalTrainLoss / trainSize
-            bestModel.eval()
-            totalValidationLoss = 0.0
-            with torch.no_grad():
-                for inputBatch, targetBatch in validationLoader:
-                    predictions = bestModel(inputBatch)
-                    loss = lossFunction(predictions, targetBatch)
-                    totalValidationLoss += loss.item() * inputBatch.size(0)
-            averageValidationLoss = totalValidationLoss / validationSize
-            print(f'Epoch {epoch + 1} - Train Loss: {averageTrainLoss} - Validation Loss: {averageValidationLoss}')
+            layers = trial.suggest_int('layers', 1, 3)
+            neurons = trial.suggest_int('neurons', 16, 128, step=16)
+            learningRate = trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
+            device.model = models.LSTMAutoencoder(processor, device.whitelist, windowSize, layers, neurons, learningRate).to(processor)
+            device.model.train_model(trainLoader, trialEpochs, trial)
+            return device.model.get_validation_loss(validationLoader)
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=tuningTrials)
+
+        # Train model with tuned hyperparameters
+        device.model = models.LSTMAutoencoder(
+            processor, 
+            device.whitelist, 
+            windowSize, 
+            study.best_params['layers'], 
+            study.best_params['neurons'], 
+            study.best_params['learningRate']
+        ).to(processor)
+        device.model.train_model(trainLoader, finalEpochs)
+        device.model.get_validation_loss(validationLoader)
+        
+        # Save model and metadata
         metadata = {
             'features': device.whitelist,
             'pollInterval': device.pollInterval,
             'windowSize': device.windowSize,
-            'hyperparameters': bestParams
+            'hyperparameters': study.best_params
         }
         modelPackage = {
-            'model': bestModel,
+            'model': device.model,
             'metadata': metadata
         }
+        os.makedirs('models', exist_ok=True)
+        modelPath = f'models/{device.deviceType}.pt'
         torch.save(modelPackage, modelPath)
-        print(f'Model for {device.deviceType} saved with metadata.')
+        print(f'{device.deviceType} saved.')
 
 # MODE 2: Live Analysis
 elif programMode == 2:
     def start_analysis_loop(device):
         while not killEvent.is_set():
-            if killEvent.wait(device.pollInterval / 1000):
+            if killEvent.wait(1 / device.pollingRate):
                 break
             device.poll()
             filteredSequence = []
@@ -391,7 +251,7 @@ elif programMode == 2:
             if len(filteredSequence) >= device.windowSize:
                 inputData = numpy.array(filteredSequence[-device.windowSize:])
                 inputData = scaleData(inputData)
-                inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0)
+                inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0).to(processor)
                 with torch.no_grad():
                     reconstructedTensor = device.model(inputTensor)
                 lossValue = torch.nn.functional.mse_loss(reconstructedTensor, inputTensor).item()
@@ -399,14 +259,15 @@ elif programMode == 2:
                 device.anomalyHistory.append(lossValue)
                 device.sequence = []
 
+    # Load models
     modelLoaded = False
-    for device in devices:
+    for device in deviceList:
         try:
             modelPackage = torch.load(f'models/{device.deviceType}.pt')
             device.whitelist = modelPackage['metadata']['features']
             device.pollInterval = modelPackage['metadata']['pollInterval']
             device.windowSize = modelPackage['metadata']['windowSize']
-            device.model = modelPackage['model']
+            device.model = modelPackage['model'].to(processor)
             device.model.eval()
             modelLoaded = True
         except Exception as exception:
@@ -414,8 +275,9 @@ elif programMode == 2:
     if not modelLoaded:
         raise ValueError('No models found. Exiting...')
     
+    # Start threaded polling and analysis
     analysisThreads = []
-    for device in devices:
+    for device in deviceList:
         if device.isCapturing:
             thread = threading.Thread(target=start_analysis_loop, args=(device,))
             thread.start()
@@ -424,13 +286,14 @@ elif programMode == 2:
     for thread in analysisThreads:
         thread.join()
 
+    # Generate anomaly graph
     os.makedirs('reports', exist_ok=True)
     matplotlib.use('Agg')
-    for device in devices:
+    for device in deviceList:
         matplotlib.pyplot.plot(device.anomalyHistory, label=device.deviceType)
     matplotlib.pyplot.xlabel('Window')
     matplotlib.pyplot.ylabel('Anomaly Score')
     matplotlib.pyplot.title('Anomaly Score Over Time')
     matplotlib.pyplot.legend()
-    matplotlib.pyplot.savefig(f'reports/anomalies_{time.strftime("%Y%m%d-%H%M%S")}.png')
+    matplotlib.pyplot.savefig(f'reports/anomalies_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print('Anomaly graph saved. Exiting...')
