@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for tasks such as anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, and learning rate without manually setting them.
+This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, and learning rate without manually setting them.
 
 ---
 
@@ -31,26 +31,27 @@ These parameters control the high-level operation of the program.
 - **recordBind**  
   *Type:* String  
   *Description:* This bind will toggle data collection. Can be any feature of any device.  
-  **Important:** This bind must not be included in any whitelists and cannot be the killKey.
+  Note: This bind must not be included in any whitelists and cannot be the `killKey`.  
 
 - **killKey**  
   *Type:* String  
   *Description:* The bind that, when pressed, will terminate the program. Must be a keyboard key.  
-  **Important:** This bind must not be included in any whitelists and cannot be the killKey.
+  Note: This bind must not be included in any whitelists and cannot be the `recordBind`.  
 
 ### Device Sections
 
 These parameters control device and data characteristics.
 
-- **capture(Device)**  
+- **capture**  
   *Type:* Integer (0 or 1)  
   *Description:* Toggle to enable (`1`) or disable (`0`) data capture on that device.  
 
-- **(device)Whitelist**  
+- **whitelist**  
   *Type:* Comma-separated String  
   (OVERWRITTEN BY LOADED MODEL)  
   *Description:*  
-  A list of input features to be used for training. If left empty, all available features for that device are used. This setting is ignored in mode 0. Do not include the `killKey` in the keyboardWhitelist.  
+  A list of input features to be used for training. If left empty, all available features for that device are used.  
+  Note: This setting is ignored when `programMode` is 0. Do not include the `killKey` in the `keyboardWhitelist`.  
   
   **Possible Values:**  
   Keyboard:  
@@ -77,8 +78,8 @@ These parameters control device and data characteristics.
   (OVERWRITTEN BY LOADED MODEL)  
   *Description:* The number of time steps in an input sequence.  
   *Impact:*  
-  - **Larger windowSize:** Captures more context and longer-term dependencies, but requires more data and computational power.
-  - **Smaller windowSize:** Faster training with less context; may not capture longer patterns adequately.
+  - A larger window size captures more context and longer-term dependencies, but requires more data and computational power.
+  - A smaller window size provides faster training with less context; may not capture longer patterns adequately.
 
 ### Training Section
 
@@ -87,27 +88,26 @@ It is recommended that you first attempt to train with the default parameters.
 
 - **trialEpochs**  
   *Type:* Integer  
-  *Description:* The number of epochs per trial.
+  *Description:* The number of epochs per trial.  
   *Impact:*  
-  - **More epochs:** Increases tuning time, provides slightly more accurate tuning
-  - **Less epochs:** Reduces tuning time, provides slightly less accurate tuning
+  - More trial epochs increases tuning time and provides slightly more accurate tuning.
 
 - **tuningTrials**  
   *Type:* Integer  
   *Description:* The number of trials through the automatic tuning process.  
   *Impact:*  
-  More tuning trials allows the training loop to explore a larger hyperparameter space for higher accuracy.
-  **Note:** The hyperparameter tuning process automatically optimizes parameters such as:
-  - Number of LSTM layers (`layerCount`)
-  - Neuron count per layer (`neuronCount`)
-  - Learning rate (`learningRate`)
+  More tuning trials allows the training loop to explore a larger hyperparameter space for higher accuracy.  
+  **Note:** The hyperparameter tuning process automatically optimizes the following parameters:
+  - Number of LSTM layers
+  - Neuron count per layer
+  - Learning rate
 
 - **finalEpochs**  
   *Type:* Integer  
-  *Description:* The number of epochs used to train tuned model.
+  *Description:* The number of epochs used to train tuned model.  
   *Impact:*  
-  - **More epochs:** Increases accuracy and training time, risks overfitting
-  - **Less epochs:** Reduces accuracy and training time, risks underfitting
+  - More final epochs increases accuracy and training time but risks overfitting.
+  - Fewer final epochs reduces accuracy and training time but risks underfitting.
 
 ---
 
@@ -123,7 +123,7 @@ Feature selection is a critical process in model training. It involves choosing 
 - **Leverage Domain Knowledge:**  
   Use insights about your application to select features that are most likely to contribute valuable information. For instance, specific keys or mouse movements might be more indicative of user behavior in your use case. They may also be more prone to cheating inputs such as strafe or anti-recoil macros.
 - **Iterative Refinement:**  
-  Start with a broad set of features and evaluate the model’s performance. Gradually remove or adjust features based on validation results, focusing on those that have the most impact.
+  Start with a broad set of features and evaluate the model's performance. Gradually remove or adjust features based on validation results, focusing on those that have the most impact.
 - **Monitor for Overfitting:**  
   Including too many features can lead to overfitting. A lean, well-chosen feature set helps the model generalize better.
 - **Reduce Redundancy:**  
