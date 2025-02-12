@@ -8,8 +8,8 @@ class LSTMAutoencoder(torch.nn.Module):
         self.whitelist = whitelist
         self.features = len(self.whitelist)
         self.windowSize = windowSize
-        self.layers = layers   # Do I want these to be the same across all layer-types?
-        self.neurons = neurons # 
+        self.layers = layers
+        self.neurons = neurons
         self.lossFunction = torch.nn.MSELoss()
         self.encoderLstm = torch.nn.LSTM(self.features, neurons, layers, batch_first=True)
         self.decoderLstm = torch.nn.LSTM(neurons, neurons, layers, batch_first=True)
@@ -44,13 +44,13 @@ class LSTMAutoencoder(torch.nn.Module):
         self.eval()
         totalLoss = 0.0
         totalSamples = 0
+        batchSize = dataLoader.batch_size
         with torch.no_grad():
             for inputBatch, targetBatch in dataLoader:
                 inputBatch = inputBatch.to(self.processor)
                 targetBatch = targetBatch.to(self.processor)
                 predictions = self(inputBatch)
                 loss = self.lossFunction(predictions, targetBatch)
-                batchSize = inputBatch.size(0)
                 totalLoss += loss.item() * batchSize
                 totalSamples += batchSize
         valLoss = totalLoss / totalSamples
