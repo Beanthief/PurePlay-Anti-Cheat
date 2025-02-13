@@ -158,7 +158,7 @@ def start_model_training():
         def objective(trial):
             # Common hyperparameters for all optimizers
             layers = trial.suggest_int('layers', 1, 3)
-            neurons = trial.suggest_int('neurons', 32, 256, step=32)
+            neurons = trial.suggest_int('neurons', 16, 256, step=16)
             optimizerName = trial.suggest_categorical('optimizer', ['Adam', 'SGD', 'RMSprop'])
 
             # Conditional hyperparameter ranges based on the optimizer
@@ -247,7 +247,7 @@ def start_model_training():
         earlyStopCallback = pytorch_lightning.callbacks.EarlyStopping(
             monitor='val_loss',
             min_delta=-1e-8, # Stop only if the model worsens (within precision limits)
-            patience=5,
+            patience=10,
             mode='min'
         )
         earlySaveCallback = FullModelCheckpoint(
