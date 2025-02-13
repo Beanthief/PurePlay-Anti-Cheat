@@ -121,8 +121,6 @@ if programMode == 0:
                 threading.Thread(target=start_save_loop, args=(device,)).start()
             ]
     killEvent.wait()
-    for thread in threads:
-        thread.join()
 
 # MODE 1: Model Training
 elif programMode == 1:
@@ -249,8 +247,6 @@ elif programMode == 2:
             except:
                 print(f'No {device.deviceType} model found.')
     killEvent.wait()
-    for thread in threads:
-        thread.join()
 
     os.makedirs('reports', exist_ok=True)
     matplotlib.use('Agg')

@@ -119,7 +119,7 @@ class Gamepad(Device):
         if invalidFeatures:
             raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
         if not XInput.get_connected()[0]:
-            print('No gamepad detected')
+            print('No gamepad detected.')
 
     def start_poll_loop(self, killEvent):
         while XInput.get_connected()[0] and not killEvent.is_set():
