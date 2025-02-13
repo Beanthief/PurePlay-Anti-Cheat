@@ -1,8 +1,24 @@
 import pytorch_lightning
+import optuna
 import torch
 
 class LSTMAutoencoder(pytorch_lightning.LightningModule):
-    def __init__(self, processor, whitelist, windowSize, layers, neurons, optimizerName, learningRate, weightDecay, scalerMin, scalerMax, dropout=0.2, teacherForcingRatio=0.5):
+    def __init__(
+        self, 
+        processor, 
+        whitelist, 
+        windowSize, 
+        layers, 
+        neurons, 
+        optimizerName, 
+        learningRate, 
+        weightDecay, 
+        scalerMin, 
+        scalerMax, 
+        dropout=0.2, 
+        teacherForcingRatio=0.5,
+        trial=None  # Optional Optuna trial for pruning
+    ):
         super().__init__()
         self.processor = processor
         self.whitelist = whitelist
@@ -17,12 +33,22 @@ class LSTMAutoencoder(pytorch_lightning.LightningModule):
         self.teacherForcingRatio = teacherForcingRatio
         self.scalerMin = scalerMin
         self.scalerMax = scalerMax
+        self.trial = trial
 
         self.lossFunction = torch.nn.MSELoss()
-        self.encoder = torch.nn.LSTM(self.features, neurons, layers, batch_first=True, dropout=dropout if layers > 1 else 0.0)
-        self.decoder = torch.nn.LSTM(neurons, neurons, layers, batch_first=True, dropout=dropout if layers > 1 else 0.0)
+        self.encoder = torch.nn.LSTM(
+            self.features, neurons, layers, 
+            batch_first=True, 
+            dropout=dropout if layers > 1 else 0.0
+        )
+        self.decoder = torch.nn.LSTM(
+            neurons, neurons, layers, 
+            batch_first=True, 
+            dropout=dropout if layers > 1 else 0.0
+        )
         self.outputLayer = torch.nn.Linear(neurons, self.features)
         self.teacherForcingProjection = torch.nn.Linear(self.features, self.neurons)
+        self._val_losses = []
 
     def forward(self, inputSequence, targetSequence=None):
         encoderOutput, (hiddenState, cellState) = self.encoder(inputSequence)
@@ -51,8 +77,21 @@ class LSTMAutoencoder(pytorch_lightning.LightningModule):
         inputBatch, targetBatch = batch
         predictions = self(inputBatch)
         loss = self.lossFunction(predictions, targetBatch)
-        self.log('val_loss', loss, prog_bar=True)
+        self.log('val_loss', loss, prog_bar=True, on_epoch=True)
+        self._val_losses.append(loss.detach())
         return loss
+
+    def on_validation_epoch_end(self):
+        if self._val_losses:
+            avg_loss = torch.stack(self._val_losses).mean()
+            if self.trial is not None:
+                if not hasattr(self, '_last_reported_epoch') or self._last_reported_epoch != self.current_epoch:
+                    self.trial.report(avg_loss.item(), self.current_epoch)
+                    self._last_reported_epoch = self.current_epoch
+                    if self.trial.should_prune():
+                        raise optuna.TrialPruned()
+            self.log('avg_val_loss', avg_loss, prog_bar=True)
+        self._val_losses.clear()
 
     def configure_optimizers(self):
         if self.optimizerName == 'Adam':

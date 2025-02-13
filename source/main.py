@@ -1,10 +1,13 @@
 import matplotlib.pyplot as plt
 import pytorch_lightning
+import multiprocessing
 import configparser
 import matplotlib
 import threading
 import keyboard
 import logging
+
+import pytorch_lightning.callbacks
 import devices
 import optuna
 import pandas
@@ -14,7 +17,6 @@ import numpy
 import time
 import csv
 import os
-import multiprocessing
 
 # ------------------------
 # Data Utilities
@@ -60,6 +62,7 @@ def apply_scaler(data, dataMin, dataMax, featureRange=(0, 1)):
 # MODE 0: Data Collection
 # ------------------------
 def start_data_collection():
+    threads = []
     def start_save_loop(device):
         filePath = f'data/{device.deviceType}_{device.pollingRate}_{time.strftime("%Y%m%d-%H%M%S")}.csv'
         with open(filePath, 'a', newline='') as file:
@@ -80,26 +83,28 @@ def start_data_collection():
     for device in deviceList:
         if device.isCapturing:
             device.whitelist = device.features
-            threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start()
-            threading.Thread(target=start_save_loop, args=(device,)).start()
+            threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start())
+            threads.append(threading.Thread(target=start_save_loop, args=(device,)).start())
     killEvent.wait()
+    for thread in threads:
+        thread.join()
 
 # ------------------------
 # MODE 1: Model Training
 # ------------------------
 def start_model_training():
     try:
-        files = [os.path.join('data', fileName)
+        dataFiles = [os.path.join('data', fileName)
                     for fileName in os.listdir('data')
                     if os.path.isfile(os.path.join('data', fileName)) and fileName.endswith('.csv')]
-        if not files:
-            raise ValueError('No data files found. Exiting...')
+        if not dataFiles:
+            raise ValueError('No data files found.')
     except Exception as e:
-        raise ValueError('Error: Missing data directory. Exiting...') from e
+        raise ValueError('Error: Missing data directory.') from e
 
     for device in deviceList:
         windowsList = []
-        for file in files:
+        for file in dataFiles:
             fileName = os.path.basename(file)
             parts = fileName.split('_')
             if len(parts) < 3:
@@ -176,25 +181,16 @@ def start_model_training():
                 learningRate,
                 weightDecay,
                 scalerMin,
-                scalerMax
-            )
-
-            # Set up early stopping callback
-            earlyStopCallback = pytorch_lightning.callbacks.EarlyStopping(
-                monitor='val_loss',
-                min_delta=0.0,
-                patience=5,
-                verbose=False,
-                mode='min'
+                scalerMax,
+                trial=trial
             )
 
             # Configure the PyTorch Lightning trainer
             trainer = pytorch_lightning.Trainer(
                 max_epochs=trialEpochs,
-                callbacks=[earlyStopCallback],
+                precision=precisionValue,
                 logger=False,
                 enable_checkpointing=False,
-                precision=precisionValue,
                 enable_progress_bar=False,
                 enable_model_summary=False,
             )
@@ -212,10 +208,8 @@ def start_model_training():
         study = optuna.create_study(direction='minimize')
         study.optimize(objective, n_trials=tuningTrials)
 
-        # Train final model given optuna params
+        os.makedirs('models', exist_ok=True)
         logging.getLogger('pytorch_lightning').setLevel(logging.INFO)
-
-        # Initialize the final model with the optuna parameters
         model = models.LSTMAutoencoder(
             processor,
             device.whitelist,
@@ -228,53 +222,71 @@ def start_model_training():
             scalerMin,
             scalerMax
         )
-    
-        # Set up early stopping callback
-        earlyStopCallback = pytorch_lightning.callbacks.early_stopping.EarlyStopping(
+
+        # Create custom full checkpoint callback 
+        class FullModelCheckpoint(pytorch_lightning.callbacks.ModelCheckpoint):
+            def _get_filepath(self, trainer, pl_module):
+                return os.path.join(self.dirpath, f"{self.filename}.pt")
+
+            def save_checkpoint(self, trainer, model):
+                filepath = self._get_filepath(trainer, model)
+                os.makedirs(self.dirpath, exist_ok=True)
+                torch.save(model, filepath)
+                self.last_model_path = filepath
+                if self.verbose:
+                    print(f"Saved full model checkpoint at: {filepath}")
+
+            def on_train_end(self, trainer, pl_module):
+                self.save_checkpoint(trainer, pl_module)
+        
+        # Define callback functions
+        earlyStopCallback = pytorch_lightning.callbacks.EarlyStopping(
             monitor='val_loss',
             min_delta=0.0,
             patience=5,
             mode='min'
         )
+        earlySaveCallback = FullModelCheckpoint(
+            monitor='val_loss',
+            dirpath='models/',
+            filename=f'{device.deviceType}',
+            save_top_k=1,
+            mode='min',
+            verbose=True
+        )
 
         # Configure the PyTorch Lightning trainer
         trainer = pytorch_lightning.Trainer(
-            max_epochs=100,
-            callbacks=[earlyStopCallback],
-            precision=precisionValue
+            max_epochs=1000,
+            callbacks=[earlyStopCallback, earlySaveCallback],
+            precision=precisionValue,
+            logger=False
         )
 
-        # Train the model
+        # Train the mode
+        
         print(f'Training final {device.deviceType} model...')
-        trainer.fit(model, train_dataloader=trainLoader, val_dataloaders=testLoader)
+        trainer.fit(model, train_dataloaders=trainLoader, val_dataloaders=testLoader)
+        print(f'Finished training {device.deviceType} model.')
 
-        # Validate the model and extract the validation loss
+        # Delete checkpoint files
+        checkpointFiles = [os.path.join('models', fileName)
+                    for fileName in os.listdir('models')
+                    if os.path.isfile(os.path.join('models', fileName)) and not fileName.endswith('.pt')]
+        for file in checkpointFiles:
+            os.remove(file)
+
+        # Test model and print results
+        device.model = torch.load(f'models/{device.deviceType}.pt', weights_only=False).to(processor).eval()
         validationResult = trainer.validate(model, dataloaders=testLoader, verbose=False)
         testLoss = validationResult[0]['val_loss']
         print(f'Final test loss: {testLoss}')
-
-        # Save the model and its metadata
-        metadata = {
-            'whitelist': device.whitelist,
-            'pollingRate': device.pollingRate,
-            'windowSize': device.windowSize,
-            'hyperparameters': study.best_params,
-            'scalerMin': device.model.scalerMin.tolist(),
-            'scalerMax': device.model.scalerMax.tolist()
-        }
-        modelPackage = {
-            'model': device.model,
-            'metadata': metadata
-        }
-        os.makedirs('models', exist_ok=True)
-        modelPath = f'models/{device.deviceType}.pt'
-        torch.save(modelPackage, modelPath)
-        print(f'Final {device.deviceType} model saved.')
 
 # ------------------------
 # MODE 2: Live Analysis
 # ------------------------
 def start_live_analysis():
+    threads = []
     def start_analysis_loop(device):
         while not killEvent.is_set():
             with device.condition:
@@ -297,23 +309,21 @@ def start_live_analysis():
             device.sequence = []
 
     for device in deviceList:
-        if not device.isCapturing:
-            break
-        try:
-            modelPackage = torch.load(f'models/{device.deviceType}.pt')
-            metadata = modelPackage['metadata']
-            device.whitelist = metadata['whitelist']
-            device.pollingRate = metadata['pollingRate']
-            device.windowSize = metadata['windowSize']
-            device.model = modelPackage['model'].to(processor).eval()
-            device.model.scalerMin = numpy.array(metadata['scalerMin'])
-            device.model.scalerMax = numpy.array(metadata['scalerMax'])
-            threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start()
-            threading.Thread(target=start_analysis_loop, args=(device,)).start()
-        except Exception as e:
-            print(f'No {device.deviceType} model found. Exception: {e}')
+        if device.isCapturing:
+            try:
+                device.model = torch.load(f'models/{device.deviceType}.pt', weights_only=False).to(processor).eval()
+                device.whitelist = device.model.whitelist
+                device.pollingRate = device.model.pollingRate
+                device.windowSize = device.model.windowSize
+                threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start())
+                threads.append(threading.Thread(target=start_analysis_loop, args=(device,)).start())
+            except Exception as e:
+                print(f'No {device.deviceType} model found. Exception: {e}')
     killEvent.wait()
+    for thread in threads:
+        thread.join()
 
+    # Generate graph
     os.makedirs('reports', exist_ok=True)
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -324,7 +334,7 @@ def start_live_analysis():
     plt.title('Anomaly Score Over Time')
     plt.legend()
     plt.savefig(f'reports/anomalies_{time.strftime("%Y%m%d-%H%M%S")}.png')
-    print('Anomaly graph saved. Exiting...')
+    print('Anomaly graph saved.')
 
    
 if __name__ == '__main__':
@@ -376,7 +386,7 @@ if __name__ == '__main__':
 
     def kill_callback():
         if not killEvent.is_set():
-            print('Kill key pressed. Exiting...')
+            print('Kill key pressed...')
             killEvent.set()
 
     keyboard.add_hotkey(killKey, kill_callback)
