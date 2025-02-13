@@ -115,7 +115,7 @@ def start_model_training():
             if parts[0] == device.deviceType:
                 filePollRate = int(parts[1])
                 if filePollRate != device.pollingRate:
-                    raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
+                    raise ValueError(f'Data poll rate does not match configuration.')
                 fileData = pandas.read_csv(file)[device.whitelist]
                 trimIndex = (fileData.shape[0] // device.windowSize) * device.windowSize
                 fileData = fileData.iloc[:trimIndex].to_numpy()
