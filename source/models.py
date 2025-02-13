@@ -26,12 +26,10 @@ class LSTMAutoencoder(torch.nn.Module):
         reconstructedSequence = self.outputLayer(decoderOutputs)
         return reconstructedSequence
 
-    def train_weights(self, dataLoader, epochs, trial=None):
-        self.train()
+    def train_weights(self, trainLoader, testLoader, epochs, trial=None):
         for epoch in range(epochs):
-            if trial and trial.should_prune():
-                raise optuna.TrialPruned()
-            for inputBatch, targetBatch in dataLoader:
+            for inputBatch, targetBatch in trainLoader:
+                self.train()
                 inputBatch = inputBatch.to(self.processor)
                 targetBatch = targetBatch.to(self.processor)
                 self.optimizer.zero_grad()
@@ -39,6 +37,11 @@ class LSTMAutoencoder(torch.nn.Module):
                 loss = self.lossFunction(predictions, targetBatch)
                 loss.backward()
                 self.optimizer.step()
+            testLoss = self.get_test_loss(testLoader)
+            if trial:
+                trial.report(testLoss, epoch)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
 
     def get_test_loss(self, dataLoader):
         self.eval()

@@ -28,15 +28,10 @@ These parameters control the high-level operation of the program.
   - `1` — Model Training  
   - `2` — Live Analysis  
 
-- **recordBind**  
-  *Type:* String  
-  *Description:* This bind toggle data collection when held. Can be any feature of any device.  
-  Note: This bind must not be included in any whitelists and cannot be the `killKey`.  
-
 - **killKey**  
   *Type:* String  
-  *Description:* The bind that, when pressed, will terminate the program. Must be a keyboard key.  
-  Note: This bind must not be included in any whitelists and cannot be the `recordBind`.  
+  *Description:* The bind that, when pressed, will terminate the program. It must be a keyboard key.  
+  Note: This bind must not be included in the keyboard whitelist.
 
 ### Device Sections
 
@@ -51,7 +46,7 @@ These parameters control device and data characteristics.
   (OVERWRITTEN BY LOADED MODEL)  
   *Description:*  
   A list of input features to be used for training. If left empty, all available features for that device are used.  
-  Note: This setting is ignored when `programMode` is 0. Do not include the `killKey` in the `keyboardWhitelist`.  
+  Note: This setting is ignored when `programMode` is 0.
   
   **Possible Values:**  
   Keyboard:  
@@ -76,10 +71,10 @@ These parameters control device and data characteristics.
 - **windowSize**  
   *Type:* Integer (>= 5)  
   (OVERWRITTEN BY LOADED MODEL)  
-  *Description:* The number of time steps in an input sequence.  
+  *Description:* The number of time steps in an input sequence. It is recommended to increase this as you increase polling rate. This setting is also used as the save interval for data collection.  
   *Impact:*  
-  - A larger window size captures more context and longer-term dependencies, but requires more data and computational power.
-  - A smaller window size provides faster training with less context; may not capture longer patterns adequately.
+  - A larger window size captures more context and longer-term dependencies, but requires more data and computation power.
+  - A smaller window size provides faster training with less context but may not capture longer patterns adequately.
 
 ### Training Section
 

@@ -1,4 +1,5 @@
 import pyautogui
+import threading
 import keyboard
 import XInput
 import mouse
@@ -13,6 +14,7 @@ class Device:
         self.pollingRate = pollingRate
         self.windowSize = windowSize
         self.sequence = []
+        self.condition = threading.Condition()
         self.model = None
         self.anomalyHistory = []
 
@@ -39,10 +41,13 @@ class Keyboard(Device):
         if invalidFeatures:
             raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
 
-    def start_poll_loop(self, recordEvent, killEvent):
-        while recordEvent.is_set() and not killEvent.is_set():
+    def start_poll_loop(self, killEvent):
+        while not killEvent.is_set():
             row = [1 if keyboard.is_pressed(feature) else 0 for feature in self.whitelist]
-            self.sequence.append(row)
+            with self.condition:
+                self.sequence.append(row)
+                if len(self.sequence) >= self.windowSize:
+                    self.condition.notify()
             time.sleep(1 / self.pollingRate)
 
 class Mouse(Device):
@@ -59,8 +64,8 @@ class Mouse(Device):
         self.screenWidth, self.screenHeight = pyautogui.size()
         self.scale = min(self.screenWidth, self.screenHeight)
 
-    def start_poll_loop(self, recordEvent, killEvent):
-        while recordEvent.is_set() and not killEvent.is_set():
+    def start_poll_loop(self, killEvent):
+        while not killEvent.is_set():
             row = []
             if 'left' in self.whitelist:
                 row.append(1 if mouse.is_pressed(button='left') else 0)
@@ -91,7 +96,10 @@ class Mouse(Device):
                 if 'magnitude' in self.whitelist:
                     row.append(normalizedMagnitude)
                 self.lastPosition = currentPosition
-            self.sequence.append(row)
+            with self.condition:
+                self.sequence.append(row)
+                if len(self.sequence) >= self.windowSize:
+                    self.condition.notify()
             time.sleep(1 / self.pollingRate)
 
 class Gamepad(Device):
@@ -113,28 +121,30 @@ class Gamepad(Device):
         if not XInput.get_connected()[0]:
             print('No gamepad detected')
 
-    def start_poll_loop(self, recordEvent, killEvent):
-        if XInput.get_connected()[0]:
-            while recordEvent.is_set() and not killEvent.is_set():
-                state = XInput.get_state(0)
-                row = []
-                button_values = XInput.get_button_values(state)
-                for button, value in button_values.items():
-                    if button in self.whitelist:
-                        row.append(int(value))
-                trigger_values = XInput.get_trigger_values(state)
-                if "LT" in self.whitelist:
-                    row.append(trigger_values[0])
-                if "RT" in self.whitelist:
-                    row.append(trigger_values[1])
-                left_thumb, right_thumb = XInput.get_thumb_values(state)
-                if "LX" in self.whitelist:
-                    row.append(left_thumb[0])
-                if "LY" in self.whitelist:
-                    row.append(left_thumb[1])
-                if "RX" in self.whitelist:
-                    row.append(right_thumb[0])
-                if "RY" in self.whitelist:
-                    row.append(right_thumb[1])
+    def start_poll_loop(self, killEvent):
+        while XInput.get_connected()[0] and not killEvent.is_set():
+            row = []
+            gamepadState = XInput.get_state(0)
+            button_values = XInput.get_button_values(gamepadState)
+            for button, value in button_values.items():
+                if button in self.whitelist:
+                    row.append(int(value))
+            trigger_values = XInput.get_trigger_values(gamepadState)
+            if "LT" in self.whitelist:
+                row.append(trigger_values[0])
+            if "RT" in self.whitelist:
+                row.append(trigger_values[1])
+            left_thumb, right_thumb = XInput.get_thumb_values(gamepadState)
+            if "LX" in self.whitelist:
+                row.append(left_thumb[0])
+            if "LY" in self.whitelist:
+                row.append(left_thumb[1])
+            if "RX" in self.whitelist:
+                row.append(right_thumb[0])
+            if "RY" in self.whitelist:
+                row.append(right_thumb[1])
+            with self.condition:
                 self.sequence.append(row)
-                time.sleep(1 / self.pollingRate)
+                if len(self.sequence) >= self.windowSize:
+                    self.condition.notify()
+            time.sleep(1 / self.pollingRate)
