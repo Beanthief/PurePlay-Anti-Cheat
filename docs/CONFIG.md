@@ -97,12 +97,12 @@ It is recommended that you first attempt to train with the default parameters.
   - Neuron count per layer
   - Learning rate
 
-- **finalEpochs**  
+- **batchSize**  
   *Type:* Integer  
-  *Description:* The number of epochs used to train tuned model.  
+  *Description:* The number of samples per batch during training and evaluation.  
   *Impact:*  
-  - More final epochs increases accuracy and training time but risks overfitting.
-  - Fewer final epochs reduces accuracy and training time but risks underfitting.
+  - Larger batch sizes can improve computational efficiency and speed up training on GPUs (e.g., RTX 3080) but require more memory.
+  - Smaller batch sizes may be necessary for CPU training or environments with limited memory.
 
 ---
 
