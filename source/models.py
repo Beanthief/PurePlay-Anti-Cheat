@@ -8,6 +8,7 @@ class LSTMAutoencoder(pytorch_lightning.LightningModule):
         processor, 
         whitelist, 
         windowSize, 
+        pollingRate,
         layers, 
         neurons, 
         optimizerName, 
@@ -24,6 +25,7 @@ class LSTMAutoencoder(pytorch_lightning.LightningModule):
         self.whitelist = whitelist
         self.features = len(self.whitelist)
         self.windowSize = windowSize
+        self.pollingRate = pollingRate
         self.layers = layers
         self.neurons = neurons
         self.learningRate = learningRate

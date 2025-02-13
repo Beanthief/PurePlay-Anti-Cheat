@@ -135,7 +135,7 @@ def start_model_training():
         testSize = int(0.2 * len(sequenceDataset))
         trainSize = len(sequenceDataset) - testSize
         trainDataset, testDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, testSize])
-        threadsPerLoader = max(1, os.cpu_count() // 3)
+        threadsPerLoader = max(1, os.cpu_count() // 2)
         trainLoader = torch.utils.data.DataLoader(
             trainDataset,
             batch_size=batchSize,
@@ -175,6 +175,7 @@ def start_model_training():
                 processor,
                 device.whitelist,
                 device.windowSize,
+                device.pollingRate,
                 layers,
                 neurons,
                 optimizerName,
@@ -214,6 +215,7 @@ def start_model_training():
             processor,
             device.whitelist,
             device.windowSize,
+            device.pollingRate,
             study.best_params['layers'],
             study.best_params['neurons'],
             study.best_params['optimizer'],
@@ -242,7 +244,7 @@ def start_model_training():
         # Define callback functions
         earlyStopCallback = pytorch_lightning.callbacks.EarlyStopping(
             monitor='val_loss',
-            min_delta=0.0,
+            min_delta=-1e-8, # Stop only if the model worsens (within precision limits)
             patience=5,
             mode='min'
         )
@@ -263,8 +265,7 @@ def start_model_training():
             logger=False
         )
 
-        # Train the mode
-        
+        # Train the model
         print(f'Training final {device.deviceType} model...')
         trainer.fit(model, train_dataloaders=trainLoader, val_dataloaders=testLoader)
         print(f'Finished training {device.deviceType} model.')
