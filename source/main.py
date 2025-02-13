@@ -83,8 +83,10 @@ def start_data_collection():
     for device in deviceList:
         if device.isCapturing:
             device.whitelist = device.features
-            threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start())
-            threads.append(threading.Thread(target=start_save_loop, args=(device,)).start())
+            threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)))
+            threads.append(threading.Thread(target=start_save_loop, args=(device,)))
+    for thread in threads:
+        thread.start()
     killEvent.wait()
     for thread in threads:
         thread.join()
@@ -316,10 +318,12 @@ def start_live_analysis():
                 device.whitelist = device.model.whitelist
                 device.pollingRate = device.model.pollingRate
                 device.windowSize = device.model.windowSize
-                threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start())
-                threads.append(threading.Thread(target=start_analysis_loop, args=(device,)).start())
-            except Exception as e:
-                print(f'No {device.deviceType} model found. Exception: {e}')
+                threads.append(threading.Thread(target=device.start_poll_loop, args=(killEvent,)))
+                threads.append(threading.Thread(target=start_analysis_loop, args=(device,)))
+            except:
+                print(f'No {device.deviceType} model found.')
+    for thread in threads:
+        thread.start()
     killEvent.wait()
     for thread in threads:
         thread.join()
@@ -330,6 +334,7 @@ def start_live_analysis():
     import matplotlib.pyplot as plt
     for device in deviceList:
         plt.plot(device.anomalyHistory, label=device.deviceType)
+    plt.ylim(0, 0.5)
     plt.xlabel('Window')
     plt.ylabel('Anomaly Score')
     plt.title('Anomaly Score Over Time')
@@ -384,11 +389,13 @@ if __name__ == '__main__':
         print('Removed killKey from whitelist.')
 
     killEvent = threading.Event()
-
     def kill_callback():
         if not killEvent.is_set():
             print('Kill key pressed...')
             killEvent.set()
+            for device in deviceList:
+                with device.condition:
+                    device.condition.notify_all()
 
     keyboard.add_hotkey(killKey, kill_callback)
 
