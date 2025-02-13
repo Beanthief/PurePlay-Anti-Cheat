@@ -67,10 +67,14 @@ class SequenceDataset(torch.utils.data.Dataset):
         inputSequence = self.featureData[index:index + self.windowSize]
         return torch.tensor(inputSequence, dtype=torch.float32), torch.tensor(inputSequence, dtype=torch.float32)
 
-def scale_data(data, featureRange=(0, 1)):
+def fit_scaler(data, featureRange=(0, 1)):
     dataArray = numpy.array(data)
     dataMin = dataArray.min(axis=0)
     dataMax = dataArray.max(axis=0)
+    return dataMin, dataMax
+
+def apply_scaler(data, dataMin, dataMax, featureRange=(0, 1)):
+    dataArray = numpy.array(data)
     dataRange = dataMax - dataMin
     denominator = numpy.where(dataRange == 0, 1, dataRange)
     scaleValue = (featureRange[1] - featureRange[0]) / denominator
@@ -153,7 +157,7 @@ elif programMode == 1:
                     raise ValueError(f'Inconsistent poll interval in data files for {device.deviceType}')
                 fileData = pandas.read_csv(file)[device.whitelist]
                 if fileData.shape[0] > 0:
-                    dataList.append(fileData) # Consider how appending files to each other breaks the time series
+                    dataList.append(fileData)
         
         if not dataList:
             print(f'No {device.deviceType} data. Skipping...')
@@ -163,13 +167,15 @@ elif programMode == 1:
             print(f'Not enough data for {device.deviceType} to form a sequence. Skipping...')
             continue
 
-        # Prepare data for training
-        featureData = scale_data(dataFrame.to_numpy())
+        # Data formatting
+        rawData = dataFrame.to_numpy()
+        scalerMin, scalerMax = fit_scaler(rawData)
+        featureData = apply_scaler(rawData, scalerMin, scalerMax)
         sequenceDataset = SequenceDataset(featureData, device.windowSize)
         testSize = int(0.2 * len(sequenceDataset))
         trainSize = len(sequenceDataset) - testSize
         trainDataset, testDataset = torch.utils.data.random_split(sequenceDataset, [trainSize, testSize])
-        trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True) # Shuffle or no?
+        trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=32, shuffle=True)
         testLoader = torch.utils.data.DataLoader(testDataset, batch_size=32)
 
         # Automatic hyperparameter tuning
@@ -178,8 +184,8 @@ elif programMode == 1:
                 processor, 
                 device.whitelist, 
                 device.windowSize, 
-                trial.suggest_int('layers', 1, 4), 
-                trial.suggest_int('neurons', 16, 256, step=16), 
+                trial.suggest_int('layers', 1, 3), 
+                trial.suggest_int('neurons', 32, 256, step=32), 
                 trial.suggest_float('learningRate', 1e-5, 1e-1, log=True)
             ).to(processor)
             device.model.train_weights(trainLoader, testLoader, trialEpochs, trial)
@@ -206,7 +212,9 @@ elif programMode == 1:
             'whitelist': device.whitelist,
             'pollingRate': device.pollingRate,
             'windowSize': device.windowSize,
-            'hyperparameters': study.best_params
+            'hyperparameters': study.best_params,
+            'scalerMin': scalerMin.tolist(),
+            'scalerMax': scalerMax.tolist()
         }
         modelPackage = {
             'model': device.model,
@@ -225,7 +233,8 @@ elif programMode == 2:
                 device.condition.wait_for(lambda: len(device.sequence) >= device.windowSize or killEvent.is_set())
                 if killEvent.is_set():
                     break
-            inputData = scale_data(numpy.array(device.sequence[-device.windowSize:]))
+            inputData = apply_scaler(numpy.array(device.sequence[-device.windowSize:]),
+                                     device.scalerMin, device.scalerMax)
             inputTensor = torch.tensor(inputData, dtype=torch.float32).unsqueeze(0).to(processor)
             with torch.no_grad():
                 reconstructedTensor = device.model(inputTensor)
@@ -237,16 +246,19 @@ elif programMode == 2:
         if device.isCapturing:
             try:
                 modelPackage = torch.load(f'models/{device.deviceType}.pt')
-                device.whitelist = modelPackage['metadata']['whitelist']
-                device.pollingRate = modelPackage['metadata']['pollingRate']
-                device.windowSize = modelPackage['metadata']['windowSize']
+                metadata = modelPackage['metadata']
+                device.whitelist = metadata['whitelist']
+                device.pollingRate = metadata['pollingRate']
+                device.windowSize = metadata['windowSize']
+                device.scalerMin = numpy.array(metadata['scalerMin'])
+                device.scalerMax = numpy.array(metadata['scalerMax'])
                 device.model = modelPackage['model'].to(processor).eval()
                 threads = [
                     threading.Thread(target=device.start_poll_loop, args=(killEvent,)).start(),
                     threading.Thread(target=start_analysis_loop, args=(device,)).start()
                 ]
-            except:
-                print(f'No {device.deviceType} model found.')
+            except Exception as e:
+                print(f'No {device.deviceType} model found. Exception: {e}')
     killEvent.wait()
 
     os.makedirs('reports', exist_ok=True)
@@ -257,5 +269,5 @@ elif programMode == 2:
     plt.ylabel('Anomaly Score')
     plt.title('Anomaly Score Over Time')
     plt.legend()
-    plt.savefig(f'reports/anomalies_{time.strftime('%Y%m%d-%H%M%S')}.png')
+    plt.savefig(f"reports/anomalies_{time.strftime('%Y%m%d-%H%M%S')}.png")
     print('Anomaly graph saved. Exiting...')

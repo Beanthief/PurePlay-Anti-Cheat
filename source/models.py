@@ -47,14 +47,14 @@ class LSTMAutoencoder(torch.nn.Module):
         self.eval()
         totalLoss = 0.0
         totalSamples = 0
-        batchSize = dataLoader.batch_size
         with torch.no_grad():
             for inputBatch, targetBatch in dataLoader:
                 inputBatch = inputBatch.to(self.processor)
                 targetBatch = targetBatch.to(self.processor)
                 predictions = self(inputBatch)
                 loss = self.lossFunction(predictions, targetBatch)
-                totalLoss += loss.item() * batchSize
-                totalSamples += batchSize
+                actualBatchSize = inputBatch.size(0)
+                totalLoss += loss.item() * actualBatchSize
+                totalSamples += actualBatchSize
         valLoss = totalLoss / totalSamples
         return valLoss
