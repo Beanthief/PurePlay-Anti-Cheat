@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import configparser
 import matplotlib
 import threading
@@ -251,10 +252,10 @@ elif programMode == 2:
     os.makedirs('reports', exist_ok=True)
     matplotlib.use('Agg')
     for device in deviceList:
-        matplotlib.pyplot.plot(device.anomalyHistory, label=device.deviceType)
-    matplotlib.pyplot.xlabel('Window')
-    matplotlib.pyplot.ylabel('Anomaly Score')
-    matplotlib.pyplot.title('Anomaly Score Over Time')
-    matplotlib.pyplot.legend()
-    matplotlib.pyplot.savefig(f'reports/anomalies_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        plt.plot(device.anomalyHistory, label=device.deviceType)
+    plt.xlabel('Window')
+    plt.ylabel('Anomaly Score')
+    plt.title('Anomaly Score Over Time')
+    plt.legend()
+    plt.savefig(f'reports/anomalies_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print('Anomaly graph saved. Exiting...')
