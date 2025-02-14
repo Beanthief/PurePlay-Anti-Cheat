@@ -85,24 +85,32 @@ It is recommended that you first attempt to train with the default parameters.
   *Type:* Integer  
   *Description:* The number of epochs per trial.  
   *Impact:*  
-  - More trial epochs increases tuning time and provides slightly more accurate tuning.
+  - More trial epochs increases the epoch scalability of the training loop.
 
-- **tuningTrials**  
+- **tuningPatience**  
   *Type:* Integer  
-  *Description:* The number of trials through the automatic tuning process.  
+  *Description:* The number of pruned trials before tuning stops.  
   *Impact:*  
-  More tuning trials allows the training loop to explore a larger hyperparameter space for higher accuracy.  
+  - A higher tuning patience increases the potential accuracy of the training loop.
+  - A lower tuning patience takes less time to tune.  
   **Note:** The hyperparameter tuning process automatically optimizes the following parameters:
   - Number of LSTM layers
   - Neuron count per layer
   - Learning rate
 
+- **trainingPatience**  
+  *Type:* Integer  
+  *Description:* The number of trials through the automatic tuning process.  
+  *Impact:*  
+  - A higher training patience decreases the potential error in the final model.
+  - A lower training patience takes less time to train.
+
 - **batchSize**  
   *Type:* Integer  
   *Description:* The number of samples per batch during training and evaluation.  
   *Impact:*  
-  - Larger batch sizes can improve computational efficiency and speed up training on GPUs (e.g., RTX 3080) but require more memory.
-  - Smaller batch sizes may be necessary for CPU training or environments with limited memory.
+  - A larger batch size can improve computational efficiency and speed up training on GPUs (e.g., RTX 3080) but requires more memory.
+  - A smaller batch size may be necessary for CPU training or environments with limited memory.
 
 ---
 

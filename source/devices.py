@@ -17,7 +17,6 @@ class Device:
         self.condition = threading.Condition()
         self.anomaly_history = []
 
-
 class Keyboard(Device):
     def __init__(self, is_capturing, whitelist, polling_rate, window_size):
         super(Keyboard, self).__init__(is_capturing, whitelist, polling_rate, window_size)
@@ -49,7 +48,6 @@ class Keyboard(Device):
                 if len(self.sequence) >= self.window_size:
                     self.condition.notify()
             time.sleep(1 / self.polling_rate)
-
 
 class Mouse(Device):
     def __init__(self, is_capturing, whitelist, polling_rate, window_size):
@@ -102,7 +100,6 @@ class Mouse(Device):
                 if len(self.sequence) >= self.window_size:
                     self.condition.notify()
             time.sleep(1 / self.polling_rate)
-
 
 class Gamepad(Device):
     def __init__(self, is_capturing, whitelist, polling_rate, window_size):
