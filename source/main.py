@@ -28,7 +28,7 @@ if __name__ == '__main__':
     gamepad_poll_rate = int(config_parser['Gamepad']['pollingRate'])
     gamepad_window_size = int(config_parser['Gamepad']['windowSize'])
 
-    validation_ratio = int(config_parser['Training']['validationRatio'])
+    validation_ratio = float(config_parser['Training']['validationRatio'])
     tuning_epochs = int(config_parser['Training']['tuningEpochs'])
     tuning_patience = int(config_parser['Training']['tuningPatience'])
     training_patience = int(config_parser['Training']['trainingPatience'])
