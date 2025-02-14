@@ -20,12 +20,10 @@ class TuningEarlyStopCallback:
             print("Finishing trial...")
             study.stop()
             return
-        
         if trial.state == optuna.trial.TrialState.PRUNED:
             self.consecutive_pruned += 1
         else:
             self.consecutive_pruned = 0
-        
         if self.consecutive_pruned >= self.patience:
             print(f"Stopping tuning after {self.consecutive_pruned} consecutive pruned trials.")
             study.stop()
@@ -34,12 +32,12 @@ class KillEventTrainingCallback(pytorch_lightning.callbacks.Callback):
     def __init__(self, kill_event):
         self.kill_event = kill_event
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if self.kill_event.is_set():
             print("Stopping training early...")
             trainer.should_stop = True
 
-def start_model_training(device_list, kill_event, tuning_epochs, tuning_patience, training_patience, batch_size):
+def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, batch_size):
     try:
         data_files = [os.path.join('data', file_name)
                       for file_name in os.listdir('data')
@@ -79,7 +77,7 @@ def start_model_training(device_list, kill_event, tuning_epochs, tuning_patience
 
         # Create train and validation dataloaders from complete windows
         dataset = datautils.WindowDataset(feature_data)
-        validation_size = int(0.2 * len(dataset))
+        validation_size = int(validation_ratio * len(dataset))
         train_size = len(dataset) - validation_size
         train_dataset, validation_dataset = torch.utils.data.random_split(dataset, [train_size, validation_size])
         threads_per_loader = max(1, os.cpu_count() // 2)
@@ -167,8 +165,8 @@ def start_model_training(device_list, kill_event, tuning_epochs, tuning_patience
 
         # Load the best model
         model = models.GRUAutoencoder.load_from_checkpoint(early_save_callback.best_model_path)
-        test_result = trainer_inst.test(model, dataloaders=validation_loader, verbose=False)
-        test_loss = test_result[0]['validation_loss']
+        test_result = trainer_inst.test(model, dataloaders=validation_loader, verbose=False) # Pass different test data
+        test_loss = test_result[0]['test_loss']
         print(f'Final test loss: {test_loss}')
         data_properties = {
             "window_size": device.window_size,
@@ -181,7 +179,7 @@ def start_model_training(device_list, kill_event, tuning_epochs, tuning_patience
         }
         print(f'Saving model to models directory...')
         torch.save(model_package, f'models/{device.device_type}.pt')
-        print(f'{device.deviceType} model saved.')
+        print(f'{device.device_type} model saved.')
 
     # Delete checkpoint files
     shutil.rmtree('checkpoints')

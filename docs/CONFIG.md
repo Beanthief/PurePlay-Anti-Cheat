@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses an LSTM autoencoder model for anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, and learning rate without manually setting them.
+This document provides an in-depth explanation of the configuration options, data properties, and training parameters used by the system. The system supports data collection from keyboard, mouse, and gamepad devices and uses a recurrent autoencoder model for anomaly detection. Note that **model hyperparameters are tuned automatically in the background** using the Optuna library, allowing the system to optimize parameters like layer count, neuron count, and learning rate without manually setting them.
 
 ---
 
@@ -81,9 +81,16 @@ These parameters control device and data characteristics.
 These parameters guide the training and feature selection process.  
 It is recommended that you first attempt to train with the default parameters.
 
-- **trialEpochs**  
+- **validationRatio**  
+  *Type:* Float  
+  *Description:* The percentage of the input data to be used for validation.
+  *Impact:*  
+  - A higher validation ratio offers more robust evaluation but less training data.
+  - A lower validation ratio provides more training data but may yield less reliable evaluation.
+
+- **tuningEpochs**  
   *Type:* Integer  
-  *Description:* The number of epochs per trial.  
+  *Description:* The number of epochs per tuning trial.  
   *Impact:*  
   - More trial epochs increases the epoch scalability of the training loop.
 
@@ -94,7 +101,7 @@ It is recommended that you first attempt to train with the default parameters.
   - A higher tuning patience increases the potential accuracy of the training loop.
   - A lower tuning patience takes less time to tune.  
   **Note:** The hyperparameter tuning process automatically optimizes the following parameters:
-  - Number of LSTM layers
+  - Number of model layers
   - Neuron count per layer
   - Learning rate
 
