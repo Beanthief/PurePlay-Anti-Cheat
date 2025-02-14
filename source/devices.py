@@ -7,21 +7,21 @@ import time
 import math
 
 class Device:
-    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
-        self.deviceType = ''
-        self.isCapturing = isCapturing
+    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
+        self.device_type = ''
+        self.is_capturing = is_capturing
         self.whitelist = whitelist
-        self.pollingRate = pollingRate
-        self.windowSize = windowSize
+        self.polling_rate = polling_rate
+        self.window_size = window_size
         self.sequence = []
         self.condition = threading.Condition()
-        self.model = None
-        self.anomalyHistory = []
+        self.anomaly_history = []
+
 
 class Keyboard(Device):
-    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
-        super(Keyboard, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
-        self.deviceType = 'keyboard'
+    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
+        super(Keyboard, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+        self.device_type = 'keyboard'
         self.features = [
             'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
             'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
@@ -37,35 +37,36 @@ class Keyboard(Device):
         ]
         if self.whitelist == ['']:
             self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
+        invalid_features = [feature for feature in self.whitelist if feature not in self.features]
+        if invalid_features:
+            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalid_features}')
 
-    def start_poll_loop(self, killEvent):
-        while not killEvent.is_set():
+    def start_poll_loop(self, kill_event):
+        while not kill_event.is_set():
             row = [1 if keyboard.is_pressed(feature) else 0 for feature in self.whitelist]
             with self.condition:
                 self.sequence.append(row)
-                if len(self.sequence) >= self.windowSize:
+                if len(self.sequence) >= self.window_size:
                     self.condition.notify()
-            time.sleep(1 / self.pollingRate)
+            time.sleep(1 / self.polling_rate)
+
 
 class Mouse(Device):
-    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
-        super(Mouse, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
-        self.deviceType = 'mouse'
+    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
+        super(Mouse, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+        self.device_type = 'mouse'
         self.features = ['left', 'right', 'middle', 'x1', 'x2', 'angle', 'magnitude']
         if self.whitelist == ['']:
             self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
-        self.lastPosition = []
-        self.screenWidth, self.screenHeight = pyautogui.size()
-        self.scale = min(self.screenWidth, self.screenHeight)
+        invalid_features = [feature for feature in self.whitelist if feature not in self.features]
+        if invalid_features:
+            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalid_features}')
+        self.last_position = []
+        self.screen_width, self.screen_height = pyautogui.size()
+        self.scale = min(self.screen_width, self.screen_height)
 
-    def start_poll_loop(self, killEvent):
-        while not killEvent.is_set():
+    def start_poll_loop(self, kill_event):
+        while not kill_event.is_set():
             row = []
             if 'left' in self.whitelist:
                 row.append(1 if mouse.is_pressed(button='left') else 0)
@@ -78,34 +79,35 @@ class Mouse(Device):
             if 'x2' in self.whitelist:
                 row.append(1 if mouse.is_pressed(button='x2') else 0)
             if 'angle' in self.whitelist or 'magnitude' in self.whitelist:
-                currentPosition = mouse.get_position()
-                if self.lastPosition:
-                    deltaX = currentPosition[0] - self.lastPosition[0]
-                    deltaY = currentPosition[1] - self.lastPosition[1]
-                    deltaXNorm = deltaX / self.scale
-                    deltaYNorm = deltaY / self.scale
-                    normalizedAngle = math.atan2(deltaYNorm, deltaXNorm)
-                    if normalizedAngle < 0:
-                        normalizedAngle += 2 * math.pi
-                    normalizedMagnitude = math.hypot(deltaXNorm, deltaYNorm)
+                current_position = mouse.get_position()
+                if self.last_position:
+                    delta_x = current_position[0] - self.last_position[0]
+                    delta_y = current_position[1] - self.last_position[1]
+                    delta_x_norm = delta_x / self.scale
+                    delta_y_norm = delta_y / self.scale
+                    normalized_angle = math.atan2(delta_y_norm, delta_x_norm)
+                    if normalized_angle < 0:
+                        normalized_angle += 2 * math.pi
+                    normalized_magnitude = math.hypot(delta_x_norm, delta_y_norm)
                 else:
-                    normalizedAngle = 0
-                    normalizedMagnitude = 0
+                    normalized_angle = 0
+                    normalized_magnitude = 0
                 if 'angle' in self.whitelist:
-                    row.append(normalizedAngle)
+                    row.append(normalized_angle)
                 if 'magnitude' in self.whitelist:
-                    row.append(normalizedMagnitude)
-                self.lastPosition = currentPosition
+                    row.append(normalized_magnitude)
+                self.last_position = current_position
             with self.condition:
                 self.sequence.append(row)
-                if len(self.sequence) >= self.windowSize:
+                if len(self.sequence) >= self.window_size:
                     self.condition.notify()
-            time.sleep(1 / self.pollingRate)
+            time.sleep(1 / self.polling_rate)
+
 
 class Gamepad(Device):
-    def __init__(self, isCapturing, whitelist, pollingRate, windowSize):
-        super(Gamepad, self).__init__(isCapturing, whitelist, pollingRate, windowSize)
-        self.deviceType = 'gamepad'
+    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
+        super(Gamepad, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+        self.device_type = 'gamepad'
         self.features = [
             'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT',
             'START', 'BACK',
@@ -115,26 +117,26 @@ class Gamepad(Device):
         ]
         if self.whitelist == ['']:
             self.whitelist = self.features
-        invalidFeatures = [feature for feature in self.whitelist if feature not in self.features]
-        if invalidFeatures:
-            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalidFeatures}')
+        invalid_features = [feature for feature in self.whitelist if feature not in self.features]
+        if invalid_features:
+            raise ValueError(f'Error: Invalid feature(s) in whitelist: {invalid_features}')
         if not XInput.get_connected()[0]:
             print('No gamepad detected.')
 
-    def start_poll_loop(self, killEvent):
-        while XInput.get_connected()[0] and not killEvent.is_set():
+    def start_poll_loop(self, kill_event):
+        while XInput.get_connected()[0] and not kill_event.is_set():
             row = []
-            gamepadState = XInput.get_state(0)
-            button_values = XInput.get_button_values(gamepadState)
+            gamepad_state = XInput.get_state(0)
+            button_values = XInput.get_button_values(gamepad_state)
             for button, value in button_values.items():
                 if button in self.whitelist:
                     row.append(int(value))
-            trigger_values = XInput.get_trigger_values(gamepadState)
+            trigger_values = XInput.get_trigger_values(gamepad_state)
             if "LT" in self.whitelist:
                 row.append(trigger_values[0])
             if "RT" in self.whitelist:
                 row.append(trigger_values[1])
-            left_thumb, right_thumb = XInput.get_thumb_values(gamepadState)
+            left_thumb, right_thumb = XInput.get_thumb_values(gamepad_state)
             if "LX" in self.whitelist:
                 row.append(left_thumb[0])
             if "LY" in self.whitelist:
@@ -145,6 +147,6 @@ class Gamepad(Device):
                 row.append(right_thumb[1])
             with self.condition:
                 self.sequence.append(row)
-                if len(self.sequence) >= self.windowSize:
+                if len(self.sequence) >= self.window_size:
                     self.condition.notify()
-            time.sleep(1 / self.pollingRate)
+            time.sleep(1 / self.polling_rate)
