@@ -30,11 +30,11 @@ def start_live_analysis(device_list, kill_event):
     for device in device_list:
         if device.is_capturing:
             try:
-                model_package = torch.load(f'models/{device.device_type}.pt', weights_only=False)
-                model = models.GRUAutoencoder.load_state_dict(model_package['state_dict'])
-                device.whitelist = model_package['data_properties']['whitelist']
-                device.polling_rate = model_package['data_properties']['polling_rate']
-                device.window_size = model_package['data_properties']['window_size']
+                model_package = torch.load(f'models/{device.device_type}.pt')
+                model = model_package['model']
+                device.whitelist = model_package['whitelist']
+                device.window_size = model_package['window_size']
+                device.polling_rate = model_package['polling_rate']
                 threads.append(threading.Thread(target=device.start_poll_loop, args=(kill_event,)))
                 threads.append(threading.Thread(target=start_analysis_loop, args=(device, model)))
             except:

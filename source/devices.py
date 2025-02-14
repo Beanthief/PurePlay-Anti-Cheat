@@ -7,7 +7,7 @@ import time
 import math
 
 class Device:
-    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
+    def __init__(self, is_capturing, whitelist, window_size, polling_rate):
         self.device_type = ''
         self.is_capturing = is_capturing
         self.whitelist = whitelist
@@ -18,8 +18,8 @@ class Device:
         self.anomaly_history = []
 
 class Keyboard(Device):
-    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
-        super(Keyboard, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+    def __init__(self, is_capturing, whitelist, window_size, polling_rate):
+        super(Keyboard, self).__init__(is_capturing, whitelist, window_size, polling_rate)
         self.device_type = 'keyboard'
         self.features = [
             'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -50,8 +50,8 @@ class Keyboard(Device):
             time.sleep(1 / self.polling_rate)
 
 class Mouse(Device):
-    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
-        super(Mouse, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+    def __init__(self, is_capturing, whitelist, window_size, polling_rate):
+        super(Mouse, self).__init__(is_capturing, whitelist, window_size, polling_rate)
         self.device_type = 'mouse'
         self.features = ['left', 'right', 'middle', 'x1', 'x2', 'angle', 'magnitude']
         if self.whitelist == ['']:
@@ -102,8 +102,8 @@ class Mouse(Device):
             time.sleep(1 / self.polling_rate)
 
 class Gamepad(Device):
-    def __init__(self, is_capturing, whitelist, polling_rate, window_size):
-        super(Gamepad, self).__init__(is_capturing, whitelist, polling_rate, window_size)
+    def __init__(self, is_capturing, whitelist, window_size, polling_rate):
+        super(Gamepad, self).__init__(is_capturing, whitelist, window_size, polling_rate)
         self.device_type = 'gamepad'
         self.features = [
             'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT',

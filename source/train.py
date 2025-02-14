@@ -17,7 +17,7 @@ class TuningEarlyStopCallback:
 
     def __call__(self, study: optuna.Study, trial: optuna.trial.FrozenTrial):
         if self.kill_event.is_set():
-            print("Finishing trial...")
+            print('Killing study...')
             study.stop()
             return
         if trial.state == optuna.trial.TrialState.PRUNED:
@@ -25,7 +25,7 @@ class TuningEarlyStopCallback:
         else:
             self.consecutive_pruned = 0
         if self.consecutive_pruned >= self.patience:
-            print(f"Stopping tuning after {self.consecutive_pruned} consecutive pruned trials.")
+            print(f'Stopping tuning after {self.consecutive_pruned} consecutive pruned trials.')
             study.stop()
 
 class KillEventTrainingCallback(pytorch_lightning.callbacks.Callback):
@@ -34,7 +34,7 @@ class KillEventTrainingCallback(pytorch_lightning.callbacks.Callback):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         if self.kill_event.is_set():
-            print("Stopping training early...")
+            print('Stopping training early...')
             trainer.should_stop = True
 
 def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, batch_size):
@@ -168,14 +168,11 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         test_result = trainer_inst.test(model, dataloaders=validation_loader, verbose=False) # Pass different test data
         test_loss = test_result[0]['test_loss']
         print(f'Final test loss: {test_loss}')
-        data_properties = {
-            "window_size": device.window_size,
-            "whitelist": device.whitelist,
-            "polling_rate": device.polling_rate
-        }
         model_package = {
-            "state_dict": model.state_dict(),
-            "metadata": data_properties
+            'model' : model,
+            'whitelist': device.whitelist,
+            'window_size': device.window_size,
+            'polling_rate': device.polling_rate
         }
         print(f'Saving model to models directory...')
         torch.save(model_package, f'models/{device.device_type}.pt')

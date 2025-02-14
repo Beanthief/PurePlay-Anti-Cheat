@@ -37,9 +37,9 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
 
     device_list = (
-        devices.Keyboard(capture_keyboard, keyboard_whitelist, keyboard_poll_rate, keyboard_window_size),
-        devices.Mouse(capture_mouse, mouse_whitelist, mouse_poll_rate, mouse_window_size),
-        devices.Gamepad(capture_gamepad, gamepad_whitelist, gamepad_poll_rate, gamepad_window_size)
+        devices.Keyboard(capture_keyboard, keyboard_whitelist, keyboard_window_size, keyboard_poll_rate),
+        devices.Mouse(capture_mouse, mouse_whitelist, mouse_window_size, mouse_poll_rate),
+        devices.Gamepad(capture_gamepad, gamepad_whitelist, gamepad_window_size, gamepad_poll_rate)
     )
 
     if kill_key in device_list[0].whitelist:
