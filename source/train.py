@@ -179,14 +179,3 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         # Prevent the kill event from killing the next device
         if kill_event.is_set():
             kill_event.clear()
-
-        # Save the best model
-        model = models.GRUAutoencoder.load_from_checkpoint(early_save_callback.best_model_path)
-        model_package = {
-            'model' : model,
-            'whitelist': device.whitelist,
-            'window_size': device.window_size,
-            'polling_rate': device.polling_rate
-        }
-        torch.save(model_package, f'models/{device.device_type}.pt')
-        print(f'{device.device_type} model saved.')

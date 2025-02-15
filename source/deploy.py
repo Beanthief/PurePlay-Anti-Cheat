@@ -28,7 +28,7 @@ def start_live_analysis(device_list, kill_event):
         if device.is_capturing:
             try:
                 metadata = torch.load(f'models/{device.device_type}.ckpt')
-                model = models.GRUAutoencoder.load_from_checkpoint(f'models/{device.device_type}.ckpt')
+                model = models.GRUAutoencoder.load_from_checkpoint(f'models/{device.device_type}.ckpt', device=device)
                 device.whitelist = metadata['whitelist']
                 device.window_size = metadata['window_size']
                 device.polling_rate = metadata['polling_rate']
