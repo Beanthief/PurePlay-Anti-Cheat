@@ -115,7 +115,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         # Tune the hyperparameters
         logging.getLogger('pytorch_lightning').setLevel(logging.ERROR)
         def objective(trial):
-            model = models.GRUAutoencoder(
+            model = models.LSTMAutoencoder( # Switch this to change models
                 device=device,
                 hidden_dim=trial.suggest_int('hidden_dim', 16, 256, step=16),
                 latent_dim=trial.suggest_int('latent_dim', 16, 256, step=16),
@@ -148,7 +148,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         # Train the final model
         os.makedirs('models', exist_ok=True)
         logging.getLogger('pytorch_lightning').setLevel(logging.INFO)
-        model = models.GRUAutoencoder(
+        model = models.LSTMAutoencoder( # Switch this to change models
             device=device,
             hidden_dim=study.best_params['hidden_dim'],
             latent_dim=study.best_params['latent_dim'],

@@ -28,14 +28,14 @@ def start_live_analysis(device_list, kill_event):
         if device.is_capturing:
             try:
                 metadata = torch.load(f'models/{device.device_type}.ckpt')
-                model = models.GRUAutoencoder.load_from_checkpoint(f'models/{device.device_type}.ckpt', device=device)
+                model = models.LSTMAutoencoder.load_from_checkpoint(f'models/{device.device_type}.ckpt', device=device) # Switch this to change models
                 device.whitelist = metadata['whitelist']
                 device.window_size = metadata['window_size']
                 device.polling_rate = metadata['polling_rate']
                 threads.append(threading.Thread(target=device.start_poll_loop, args=(kill_event,)))
                 threads.append(threading.Thread(target=start_analysis_loop, args=(device, model)))
-            except:
-                print(f'No {device.device_type} model found.')
+            except Exception as e:
+                print(f'No {device.device_type} model found.', e)
 
     for thread in threads:
         thread.start()
