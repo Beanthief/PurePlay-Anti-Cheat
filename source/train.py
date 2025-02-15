@@ -1,8 +1,8 @@
 import pytorch_lightning.callbacks
+import concurrent.futures
 import logging
 import optuna
-import shutil
-import pandas
+import polars
 import models
 import torch
 import numpy
@@ -36,7 +36,34 @@ class KillEventTrainingCallback(pytorch_lightning.callbacks.Callback):
             print('Stopping training early...')
             trainer.should_stop = True
 
-def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, scaler, batch_size):
+def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, batch_size):
+    def process_data_file(device, file):
+        file_name = os.path.basename(file)
+        file_parts = file_name.split('_')
+        if len(file_parts) < 3:
+            print(f'Invalid data file: {file_name}')
+            return None
+        if file_parts[0] != device.device_type:
+            return None
+        try:
+            file_poll_rate = int(file_parts[1])
+        except ValueError:
+            print(f'Invalid poll rate in file name: {file_name}')
+            return None
+        if file_poll_rate != device.polling_rate:
+            raise ValueError('Error: Data poll rate does not match configuration.')
+        lazy_dataframe = polars.scan_csv(file).select(device.whitelist)
+        row_count = lazy_dataframe.select(polars.col(device.whitelist[0]).count().alias('row_count')).collect()['row_count'][0]
+        trimmed_row_count = (row_count // device.window_size) * device.window_size
+        if trimmed_row_count == 0:
+            return None
+        lazy_dataframe = lazy_dataframe.limit(trimmed_row_count)
+        dataframe = lazy_dataframe.collect()
+        array_data = dataframe.to_numpy()
+        reshaped_windows = array_data.reshape(-1, device.window_size, array_data.shape[1])
+        windows_tensor = torch.from_numpy(reshaped_windows).float()
+        return windows_tensor
+    
     try:
         data_files = [os.path.join('data', file_name)
                       for file_name in os.listdir('data')
@@ -45,32 +72,27 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
             raise ValueError('Error: No data files found.')
     except Exception as e:
         raise ValueError('Error: Missing data directory.') from e
-    
+
     for device in device_list:
         windows_list = []
-        for file in data_files:
-            file_name = os.path.basename(file)
-            parts = file_name.split('_')
-            if len(parts) < 3:
-                print(f'Invalid data file: {file_name}')
-                continue
-            if parts[0] == device.device_type:
-                file_poll_rate = int(parts[1])
-                if file_poll_rate != device.polling_rate:
-                    raise ValueError('Error: Data poll rate does not match configuration.')
-                file_data = pandas.read_csv(file)[device.whitelist]
-                trim_index = (file_data.shape[0] // device.window_size) * device.window_size
-                file_data = file_data.iloc[:trim_index].to_numpy()
-                if file_data.size:
-                    windows = file_data.reshape(-1, device.window_size, file_data.shape[1])
-                    windows_list.append(windows)
+        
+        # Process files in parallel
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(process_data_file, device, file): file for file in data_files}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    if result is not None:
+                        windows_list.append(result)
+                except Exception as exc:
+                    print(f'Error processing file {futures[future]}: {exc}')
         if not windows_list:
             print(f'No complete window data for {device.device_type}. Skipping...')
             continue
-        
+
         # Preprocess data
         data = numpy.concatenate(windows_list, axis=0)
-        windows_tensor = torch.tensor(data, dtype=torch.float32)
+        windows_tensor = torch.from_numpy(data).float()
         dataset = torch.utils.data.TensorDataset(windows_tensor, windows_tensor)
         validation_size = int(validation_ratio * len(dataset))
         train_size = len(dataset) - validation_size
@@ -102,7 +124,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
             )
             model.trial = trial
             trainer_inst = pytorch_lightning.Trainer(
-                max_epochs=1000,
+                max_epochs=tuning_epochs,
                 precision='16-mixed',
                 logger=False,
                 enable_checkpointing=False,

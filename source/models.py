@@ -4,9 +4,10 @@ import torch
 
 class GRUAutoencoder(pytorch_lightning.LightningModule):
     def __init__(self, device, hidden_dim, latent_dim, num_layers=1, learning_rate=1e-3):
+        input_dim = len(device.whitelist)
         super().__init__()
-        self.save_hyperparameters()
-        input_dim = len(device)
+        self.save_hyperparameters(ignore=["device"])
+        self.hparams.input_dim = input_dim
         self.encoder = torch.nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.encoder_fc_layer = torch.nn.Linear(hidden_dim, latent_dim)
         self.decoder_fc_layer = torch.nn.Linear(latent_dim, hidden_dim)
@@ -39,14 +40,14 @@ class GRUAutoencoder(pytorch_lightning.LightningModule):
         input_batch, _ = batch
         predictions = self.forward(input_batch)
         loss = self.criterion(predictions, input_batch)
-        self.log("train_loss", loss)
+        self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         input_batch, _ = batch
         predictions = self.forward(input_batch)
         loss = self.criterion(predictions, input_batch)
-        self.log("val_loss", loss)
+        self.log('val_loss', loss)
         self.val_losses.append(loss)
         return loss
 

@@ -130,18 +130,18 @@ class Gamepad(Device):
                 if button in self.whitelist:
                     row.append(int(value))
             trigger_values = XInput.get_trigger_values(gamepad_state)
-            if "LT" in self.whitelist:
+            if 'LT' in self.whitelist:
                 row.append(trigger_values[0])
-            if "RT" in self.whitelist:
+            if 'RT' in self.whitelist:
                 row.append(trigger_values[1])
             left_thumb, right_thumb = XInput.get_thumb_values(gamepad_state)
-            if "LX" in self.whitelist:
+            if 'LX' in self.whitelist:
                 row.append(left_thumb[0])
-            if "LY" in self.whitelist:
+            if 'LY' in self.whitelist:
                 row.append(left_thumb[1])
-            if "RX" in self.whitelist:
+            if 'RX' in self.whitelist:
                 row.append(right_thumb[0])
-            if "RY" in self.whitelist:
+            if 'RY' in self.whitelist:
                 row.append(right_thumb[1])
             with self.condition:
                 self.sequence.append(row)

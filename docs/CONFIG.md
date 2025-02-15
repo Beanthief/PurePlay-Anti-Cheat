@@ -88,6 +88,12 @@ It is recommended that you first attempt to train with the default parameters.
   - A higher validation ratio offers more robust evaluation but less training data.
   - A lower validation ratio provides more training data but may yield less reliable evaluation.
 
+- **tuningEpochs**  
+  *Type:* Integer  
+  *Description:* The number of epochs per tuning trial.  
+  *Impact:*  
+  - More tuning epochs increases the epoch scalability of the training loop.
+
 - **tuningPatience**  
   *Type:* Integer  
   *Description:* The number of pruned trials before tuning stops.  

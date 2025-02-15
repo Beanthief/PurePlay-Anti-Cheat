@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 rem ------------------------
 rem Define paths and URLs
@@ -57,9 +57,9 @@ echo Checking if the environment already exists...
 call "%CONDA_PATH%" env list | findstr /C:"PurePlay-Anti-Cheat" >nul
 if %errorlevel%==0 (
     set /p OVERWRITE_ENV="Environment already exists. Do you want to overwrite it? (y/n): "
-    if /i "%OVERWRITE_ENV%"=="y" (
+    if /i "!OVERWRITE_ENV!"=="y" (
         echo Deleting existing environment...
-        call "%CONDA_PATH%" remove -y -q -n PurePlay-Anti-Cheat
+        call "%CONDA_PATH%" env remove -y -n PurePlay-Anti-Cheat
         if errorlevel 1 (
             echo Failed to delete the existing environment.
             pause
@@ -90,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo Installing conda packages...
-call "%CONDA_PATH%" install -y -q pytorch pytorch-lightning pandas optuna pyautogui matplotlib
+call "%CONDA_PATH%" install -y -q pytorch pytorch-lightning polars optuna pyautogui matplotlib
 if errorlevel 1 (
     echo Failed to install conda packages.
     pause

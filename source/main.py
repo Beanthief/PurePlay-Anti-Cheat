@@ -29,6 +29,7 @@ if __name__ == '__main__':
     gamepad_window_size = int(config_parser['Gamepad']['windowSize'])
 
     validation_ratio = float(config_parser['Training']['validationRatio'])
+    tuning_epochs = int(config_parser['Training']['tuningEpochs'])
     tuning_patience = int(config_parser['Training']['tuningPatience'])
     training_patience = int(config_parser['Training']['trainingPatience'])
     batch_size = int(config_parser['Training']['batchSize'])
@@ -58,6 +59,6 @@ if __name__ == '__main__':
     if program_mode == 0:
         collect.start_data_collection(device_list, kill_event)
     elif program_mode == 1:
-        train.start_model_training(device_list, kill_event, validation_ratio, tuning_patience, training_patience, batch_size)
+        train.start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, batch_size)
     elif program_mode == 2:
         deploy.start_live_analysis(device_list, kill_event)
