@@ -1,6 +1,5 @@
 import matplotlib.pyplot
 import matplotlib
-import datautils
 import threading
 import models
 import numpy
@@ -15,11 +14,9 @@ def start_live_analysis(device_list, kill_event):
                 device.condition.wait_for(lambda: len(device.sequence) >= device.window_size or kill_event.is_set())
                 if kill_event.is_set():
                     break
-            input_data = datautils.apply_scaler(
-                numpy.array(device.sequence[-device.window_size:]),
-                model.scaler_min, model.scaler_max
-            )
+            input_data = numpy.array(device.sequence[-device.window_size:])
             input_tensor = torch.tensor(input_data, dtype=torch.float32).unsqueeze(0)
+            input_tensor = input_tensor.to(next(model.parameters()).device)
             with torch.no_grad():
                 reconstructed_tensor = model(input_tensor)
             loss_value = torch.nn.functional.mse_loss(reconstructed_tensor, input_tensor).item()
@@ -30,11 +27,11 @@ def start_live_analysis(device_list, kill_event):
     for device in device_list:
         if device.is_capturing:
             try:
-                model_package = torch.load(f'models/{device.device_type}.pt')
-                model = model_package['model']
-                device.whitelist = model_package['whitelist']
-                device.window_size = model_package['window_size']
-                device.polling_rate = model_package['polling_rate']
+                metadata = torch.load(f'models/{device.device_type}.ckpt')
+                model = models.GRUAutoencoder.load_from_checkpoint(f'models/{device.device_type}.ckpt')
+                device.whitelist = metadata['whitelist']
+                device.window_size = metadata['window_size']
+                device.polling_rate = metadata['polling_rate']
                 threads.append(threading.Thread(target=device.start_poll_loop, args=(kill_event,)))
                 threads.append(threading.Thread(target=start_analysis_loop, args=(device, model)))
             except:

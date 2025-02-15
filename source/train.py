@@ -1,5 +1,4 @@
 import pytorch_lightning.callbacks
-import datautils
 import logging
 import optuna
 import shutil
@@ -37,7 +36,7 @@ class KillEventTrainingCallback(pytorch_lightning.callbacks.Callback):
             print('Stopping training early...')
             trainer.should_stop = True
 
-def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, batch_size):
+def start_model_training(device_list, kill_event, validation_ratio, tuning_epochs, tuning_patience, training_patience, scaler, batch_size):
     try:
         data_files = [os.path.join('data', file_name)
                       for file_name in os.listdir('data')
@@ -69,18 +68,14 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
             print(f'No complete window data for {device.device_type}. Skipping...')
             continue
         
-        all_windows = numpy.concatenate(windows_list, axis=0)
-        flat_data = all_windows.reshape(-1, all_windows.shape[-1])
-        scaler_min, scaler_max = datautils.fit_scaler(flat_data)
-        scaled_flat_data = datautils.apply_scaler(flat_data, scaler_min, scaler_max)
-        feature_data = scaled_flat_data.reshape(all_windows.shape)
-
-        # Create train and validation dataloaders from complete windows
-        dataset = datautils.WindowDataset(feature_data)
+        # Preprocess data
+        data = numpy.concatenate(windows_list, axis=0)
+        windows_tensor = torch.tensor(data, dtype=torch.float32)
+        dataset = torch.utils.data.TensorDataset(windows_tensor, windows_tensor)
         validation_size = int(validation_ratio * len(dataset))
         train_size = len(dataset) - validation_size
         train_dataset, validation_dataset = torch.utils.data.random_split(dataset, [train_size, validation_size])
-        threads_per_loader = max(1, os.cpu_count() // 2)
+        threads_per_loader = max(1, os.cpu_count() // 3)
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -99,7 +94,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         logging.getLogger('pytorch_lightning').setLevel(logging.ERROR)
         def objective(trial):
             model = models.GRUAutoencoder(
-                input_dim=len(device.whitelist),
+                device=device,
                 hidden_dim=trial.suggest_int('hidden_dim', 16, 256, step=16),
                 latent_dim=trial.suggest_int('latent_dim', 16, 256, step=16),
                 num_layers=trial.suggest_int('num_layers', 1, 3),
@@ -107,7 +102,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
             )
             model.trial = trial
             trainer_inst = pytorch_lightning.Trainer(
-                max_epochs=tuning_epochs,
+                max_epochs=1000,
                 precision='16-mixed',
                 logger=False,
                 enable_checkpointing=False,
@@ -132,7 +127,7 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         os.makedirs('models', exist_ok=True)
         logging.getLogger('pytorch_lightning').setLevel(logging.INFO)
         model = models.GRUAutoencoder(
-            input_dim=len(device.whitelist),
+            device=device,
             hidden_dim=study.best_params['hidden_dim'],
             latent_dim=study.best_params['latent_dim'],
             num_layers=study.best_params['num_layers'],
@@ -145,38 +140,31 @@ def start_model_training(device_list, kill_event, validation_ratio, tuning_epoch
         )
         early_save_callback = pytorch_lightning.callbacks.ModelCheckpoint(
             monitor='val_loss', 
-            dirpath='checkpoints/', 
+            dirpath='models/', 
             filename=f'{device.device_type}', 
             save_top_k=1
         )
         kill_event_callback = KillEventTrainingCallback(kill_event)
-        trainer_inst = pytorch_lightning.Trainer(
+        trainer = pytorch_lightning.Trainer(
             max_epochs=1000,
             callbacks=[early_stop_callback, early_save_callback, kill_event_callback],
             precision='16-mixed',
             logger=False
         )
         print(f'Training final {device.device_type} model...')
-        trainer_inst.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)
+        trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=validation_loader)
         
         # Prevent the kill event from killing the next device
         if kill_event.is_set():
             kill_event.clear()
 
-        # Load the best model
+        # Save the best model
         model = models.GRUAutoencoder.load_from_checkpoint(early_save_callback.best_model_path)
-        test_result = trainer_inst.test(model, dataloaders=validation_loader, verbose=False) # Pass different test data
-        test_loss = test_result[0]['test_loss']
-        print(f'Final test loss: {test_loss}')
         model_package = {
             'model' : model,
             'whitelist': device.whitelist,
             'window_size': device.window_size,
             'polling_rate': device.polling_rate
         }
-        print(f'Saving model to models directory...')
         torch.save(model_package, f'models/{device.device_type}.pt')
         print(f'{device.device_type} model saved.')
-
-    # Delete checkpoint files
-    shutil.rmtree('checkpoints')

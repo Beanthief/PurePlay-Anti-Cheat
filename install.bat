@@ -98,7 +98,7 @@ if errorlevel 1 (
 )
 
 echo Installing pip packages...
-call pip install XInput-Python mouse keyboard lightning[extra]
+call pip install XInput-Python mouse keyboard
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause

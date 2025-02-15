@@ -3,18 +3,26 @@ import optuna
 import torch
 
 class GRUAutoencoder(pytorch_lightning.LightningModule):
-    def __init__(self, input_dim, hidden_dim, latent_dim, num_layers=1, learning_rate=1e-3):
+    def __init__(self, device, hidden_dim, latent_dim, num_layers=1, learning_rate=1e-3):
         super().__init__()
         self.save_hyperparameters()
+        input_dim = len(device)
         self.encoder = torch.nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.encoder_fc_layer = torch.nn.Linear(hidden_dim, latent_dim)
         self.decoder_fc_layer = torch.nn.Linear(latent_dim, hidden_dim)
         self.decoder = torch.nn.GRU(input_dim, hidden_dim, num_layers, batch_first=True)
         self.output_layer = torch.nn.Linear(hidden_dim, input_dim)
         self.criterion = torch.nn.MSELoss()
+        self.whitelist = device.whitelist
+        self.window_size = device.window_size
+        self.polling_rate = device.polling_rate
         self.val_losses = []
         self.trial = None
-
+ 
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        return optimizer
+    
     def forward(self, inputs):
         batch_size, sequence_length, _ = inputs.size()
         _, encoder_hidden = self.encoder(inputs)
@@ -54,13 +62,8 @@ class GRUAutoencoder(pytorch_lightning.LightningModule):
             self.log('avg_val_loss', avg_loss, prog_bar=True)
         self.val_losses.clear()
 
-    def test_step(self, batch, batch_idx):
-        input_batch, _ = batch
-        predictions = self.forward(input_batch)
-        loss = self.criterion(predictions, input_batch)
-        self.log("test_loss", loss)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
-        return optimizer
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['whitelist'] = self.whitelist
+        checkpoint['window_size'] = self.window_size
+        checkpoint['polling_rate'] = self.polling_rate
+        return checkpoint

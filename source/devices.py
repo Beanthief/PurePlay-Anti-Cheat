@@ -3,8 +3,8 @@ import threading
 import keyboard
 import XInput
 import mouse
-import time
 import math
+import time
 
 class Device:
     def __init__(self, is_capturing, whitelist, window_size, polling_rate):
@@ -81,12 +81,13 @@ class Mouse(Device):
                 if self.last_position:
                     delta_x = current_position[0] - self.last_position[0]
                     delta_y = current_position[1] - self.last_position[1]
-                    delta_x_norm = delta_x / self.scale
-                    delta_y_norm = delta_y / self.scale
-                    normalized_angle = math.atan2(delta_y_norm, delta_x_norm)
+                    normalized_delta_x = delta_x / self.scale
+                    normalized_delta_y = delta_y / self.scale
+                    normalized_angle = math.atan2(normalized_delta_y, normalized_delta_x)
                     if normalized_angle < 0:
                         normalized_angle += 2 * math.pi
-                    normalized_magnitude = math.hypot(delta_x_norm, delta_y_norm)
+                    normalized_angle = normalized_angle / (2 * math.pi)
+                    normalized_magnitude = 1 - math.exp(-math.hypot(normalized_delta_x, normalized_delta_y))
                 else:
                     normalized_angle = 0
                     normalized_magnitude = 0
