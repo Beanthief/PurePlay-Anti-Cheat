@@ -358,6 +358,20 @@ def train_model(configuration):
         for file in validation_files
     ]
     validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
+    training_dataloader = torch.utils.data.DataLoader(
+        training_dataset,
+        num_workers=workers_per_loader,
+        persistent_workers=True,
+        batch_size=configuration.get('batch_size', 32),
+        shuffle=True
+    )
+    validation_dataloader = torch.utils.data.DataLoader(
+        validation_dataset,
+        num_workers=workers_per_loader,
+        persistent_workers=True,
+        batch_size=configuration.get('batch_size', 32),
+        shuffle=False
+    )
 
     input_dimension = len(whitelist)
     logging.getLogger('pytorch_lightning').setLevel(logging.ERROR)
@@ -365,21 +379,6 @@ def train_model(configuration):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
         trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
-        training_dataloader = torch.utils.data.DataLoader(
-            training_dataset,
-            num_workers=workers_per_loader,
-            persistent_workers=True,
-            batch_size=configuration.get('batch_size', 32),
-            shuffle=True
-        )
-        validation_dataloader = torch.utils.data.DataLoader(
-            validation_dataset,
-            num_workers=workers_per_loader,
-            persistent_workers=True,
-            batch_size=configuration.get('batch_size', 32),
-            shuffle=False
-        )
-
         model_type = configuration.get('model_type', 'autoencoder')
         if model_type == 'autoencoder':
             model = RecurrentAutoencoder(
@@ -606,7 +605,6 @@ def run_live_analysis(configuration):
 # Helper Function to generate graphs
 # This function identifies the relevant graph and saves it as a png.
 # =============================================================================
-
 def print_graph(indices, model_type, metric_history):
     os.makedirs('reports', exist_ok=True)
     matplotlib.pyplot.figure()
