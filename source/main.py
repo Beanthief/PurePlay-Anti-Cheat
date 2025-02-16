@@ -184,13 +184,11 @@ class RecurrentAutoencoder(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
         super().__init__()
         self.save_hyperparameters()  
-
         self.input_dimension = input_dimension
         self.hidden_dimension = hidden_dimension
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
-
         self.lstm_encoder = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
@@ -204,8 +202,8 @@ class RecurrentAutoencoder(lightning.LightningModule):
             batch_first=True
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
-
         self.loss_function = torch.nn.MSELoss()
+        self.test_metric_history = []
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -219,19 +217,26 @@ class RecurrentAutoencoder(lightning.LightningModule):
 
     def training_step(self, batch, batch_idx):
         reconstruction = self.forward(batch)
-        loss = self.loss_function(reconstruction, batch)
-        return loss
+        reconstruction_error = self.loss_function(reconstruction, batch)
+        return reconstruction_error
 
     def validation_step(self, batch, batch_idx):
         reconstruction = self.forward(batch)
-        loss = self.loss_function(reconstruction, batch)
-        self.log('val_loss', loss, prog_bar=True, on_epoch=True)
-        return loss
+        reconstruction_error = self.loss_function(reconstruction, batch)
+        self.log('val_loss', reconstruction_error, prog_bar=True, on_epoch=True)
+        return reconstruction_error
 
     def test_step(self, batch, batch_idx):
         reconstruction = self.forward(batch)
-        loss = self.loss_function(reconstruction, batch)
-        return {'test_loss': loss}
+        reconstruction_error = self.loss_function(reconstruction, batch)
+        self.test_metric_history.append(reconstruction_error.detach().cpu())
+        self.log("metric", reconstruction_error)
+        return {"metric": reconstruction_error}
+
+    def on_test_epoch_end(self):
+        average_error = torch.stack(self.test_metric_history).mean()
+        self.log("agg_metric", average_error)
+        return {"agg_metric": average_error}
 
 # =============================================================================
 # Recurrent Binary Classifier
@@ -240,13 +245,11 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length):
         super().__init__()
         self.save_hyperparameters()
-        
         self.input_dimension = input_dimension
         self.hidden_dimension = hidden_dimension
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
-        
         self.lstm = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
@@ -254,8 +257,8 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
             batch_first=True
         )
         self.classifier = torch.nn.Linear(hidden_dimension, 1)
-
         self.loss_function = torch.nn.BCEWithLogitsLoss()
+        self.test_metric_history = []
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -283,10 +286,22 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
 
     def test_step(self, batch, batch_idx):
         input_data, target = batch
-        output = self.forward(input_data)
-        target = target.float()
-        loss = self.loss_function(output, target)
-        return {'test_loss': loss}
+        logits = self(input_data)
+        confidence = torch.sigmoid(logits)
+        return {"metric": confidence.mean()}
+
+    def test_step(self, batch, batch_idx):
+        input_data, target = batch
+        logits = self.forward(input_data)
+        confidence = torch.sigmoid(logits)
+        self.test_metric_history.append(confidence.detach().cpu())
+        self.log("metric", confidence)
+        return {"metric": confidence}
+
+    def on_test_epoch_end(self):
+        average_confidence = torch.stack(self.test_metric_history).mean()
+        self.log("agg_metric", average_confidence)
+        return {"agg_metric": average_confidence}
 
 # =============================================================================
 # Recurrent Predictor
@@ -309,8 +324,8 @@ class RecurrentPredictor(lightning.LightningModule):
             batch_first=True
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
-
         self.loss_function = torch.nn.MSELoss()
+        self.test_metric_history = []
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -332,12 +347,19 @@ class RecurrentPredictor(lightning.LightningModule):
         loss = self.loss_function(prediction, target)
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
-
+    
     def test_step(self, batch, batch_idx):
         prediction = self.forward(batch)
         target = batch[:, -1, :]
-        loss = self.loss_function(prediction, target)
-        return {'test_loss': loss}
+        prediction_loss = self.loss_function(prediction, target)
+        self.test_metric_history.append(prediction_loss.detach().cpu())
+        self.log("metric", prediction_loss)
+        return {"metric": prediction_loss}
+
+    def on_test_epoch_end(self):
+        average_error = torch.stack(self.test_metric_history).mean()
+        self.log("agg_metric", average_error)
+        return {"agg_metric": average_error}
 
 # =============================================================================
 # Training Process
@@ -553,17 +575,12 @@ def run_static_analysis(configuration):
 
     trainer = lightning.Trainer(
         logger=False,
-        enable_checkpointing=False
+        enable_checkpointing=False,
     )
     test_output = trainer.test(model, dataloaders=test_dataloader, ckpt_path=None)
-
-    indices = []
-    metric_history = []
-    for i, output_dict in enumerate(test_output):
-        loss_tensor = output_dict['test_loss']
-        indices.append(i)
-        metric_history.append(loss_tensor.item())
-    print_graph(indices, model_type, metric_history)
+    indices = list(range(len(model.test_metric_history)))
+    aggregated_metric = test_output[0]['agg_metric']
+    print_graph(indices, model_type, model.test_metric_history, aggregated_metric)
 
 # =============================================================================
 # Live Analysis Mode
@@ -582,7 +599,7 @@ def run_live_analysis(configuration):
 
     root = tkinter.Tk()
     root.withdraw()
-    checkpoint = tkinter.filedialog.askopenfilenames(
+    checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
@@ -590,6 +607,7 @@ def run_live_analysis(configuration):
     screen_height = root.winfo_screenheight()
     root.destroy()
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_type = configuration.get('model_type', 'autoencoder')
     if model_type == 'autoencoder':
         model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
@@ -597,15 +615,16 @@ def run_live_analysis(configuration):
         model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
     elif model_type == 'predictor':
         model = RecurrentPredictor.load_from_checkpoint(checkpoint)
+    else:
+        print(f"Unrecognized model type '{model_type}'. Exiting.")
+        return
+    model.to(device)
     model.eval()
 
     smallest_screen_dimension = min(screen_width, screen_height)
     last_mouse_position = None
     
     sequence = []
-    metric_history = []
-    model_type = configuration['model_type']
-
     print(f'Polling devices for live analysis (press {kill_key} to stop)...')
     while True:
         if keyboard.is_pressed(kill_key):
@@ -616,35 +635,40 @@ def run_live_analysis(configuration):
         row = kb_row + m_row + gp_row
         sequence.append(row)
         if len(sequence) >= sequence_length:
-            input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32)
+            input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
             if model_type == 'autoencoder':
                 reconstruction = model(input_sequence)
                 loss_value = model.loss_function(reconstruction, input_sequence)
                 metric_value = loss_value.item()
             elif model_type == 'classifier':
-                output = model(input_sequence)
-                confidence, _ = torch.max(output, dim=1)
+                logits = model(input_sequence)
+                confidence = torch.sigmoid(logits).mean()
                 metric_value = confidence.item()
             elif model_type == 'predictor':
                 prediction = model(input_sequence)
                 loss_value = model.loss_function(prediction, input_sequence)
                 metric_value = loss_value.item()
             else:
-                metric_value = 0
-            metric_history.append(metric_value)
-            print(f'Live analysis metric: {metric_value}')
+                metric_value = 0.0
+            model.test_metric_history.append(metric_value)
+            print(f'Live analysis metric: {metric_value:.6f}')
         time.sleep(1.0 / polling_rate)
-    indices = list(range(len(metric_history)))
-    print_graph(indices, model_type, metric_history)
+
+    if len(model.test_metric_history) > 0:
+        aggregated_metric = sum(model.test_metric_history) / len(model.test_metric_history)
+    else:
+        aggregated_metric = 0.0
+    indices = list(range(len(model.test_metric_history)))
+    print_graph(indices, model_type, model.test_metric_history, aggregated_metric)
 
 # =============================================================================
 # Helper Function to generate graphs
 # This function identifies the relevant graph and saves it as a png.
 # =============================================================================
-def print_graph(indices, model_type, metric_history):
+def print_graph(indices, model_type, metric_history, aggregated_metric):
     root = tkinter.Tk()
     root.withdraw()
-    report_dir = tkinter.filedialog.askopenfilename(title='Select report save folder')
+    report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
     root.destroy()
     matplotlib.pyplot.figure()
     matplotlib.pyplot.plot(indices, metric_history)
@@ -658,7 +682,7 @@ def print_graph(indices, model_type, metric_history):
     elif model_type == 'predictor':
         matplotlib.pyplot.ylabel('Prediction Loss')
         matplotlib.pyplot.ylim(0, 0.5)
-    matplotlib.pyplot.title(f'Live Analysis - {model_type}')
+    matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
     matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print(f'Live analysis complete. Graph saved.')
 
