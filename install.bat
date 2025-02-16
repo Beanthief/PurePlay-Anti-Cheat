@@ -90,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo Installing conda packages...
-call "%CONDA_PATH%" install -y -q pytorch pytorch-lightning polars optuna pyautogui matplotlib
+call "%CONDA_PATH%" install -y -q pytorch pytorch-lightning pandas matplotlib optuna
 if errorlevel 1 (
     echo Failed to install conda packages.
     pause
@@ -98,7 +98,7 @@ if errorlevel 1 (
 )
 
 echo Installing pip packages...
-call pip install XInput-Python mouse keyboard
+call pip install XInput-Python keyboard mouse
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause

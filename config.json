@@ -1,0 +1,11 @@
+{
+  "mode": "train",
+  "model_type": "autoencoder",
+  "kill_key": "\\",
+  "polling_rate": 60,
+  "keyboard_whitelist": [],
+  "mouse_whitelist": ["angle", "magnitude"],
+  "gamepad_whitelist": [],
+  "sequence_length": 20,
+  "batch_size": 128
+}

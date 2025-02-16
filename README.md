@@ -8,7 +8,7 @@
 This solution is perfect for **low-budget game developers** who need a reliable anti-cheat system that doesn’t require extensive networking integration or costly licensing. As it is only designed to catch external cheating sources, it is recommended to be used alongside an anti-cheat capable of catching memory-based cheats.
 
 ## Features
-- 🎮 **Supports GamePad, Mouse, and Keyboard Inputs**
+- 🎮 **Supports Gamepad, Mouse, and Keyboard Inputs**
 - 🤖 **AI-Based Detection**: Trained neural networks identify anomalous input behavior.
 - 💾 **Cross-Engine Compatibility**: Runs externally, independent of the game engine.
 - ⚙️ **Customizable Tuning**: Developers can configure client/server models.
@@ -44,7 +44,7 @@ This solution is perfect for **low-budget game developers** who need a reliable 
    ```
 
 3. **Configure the settings**:
-   Edit the `config.ini` file to match your preferences and setup requirements.
+   Edit the `config.json` file to match your preferences and setup requirements.
    Read the [Configuration Guide](https://github.com/Beanthief/PurePlay-Anti-Cheat/tree/main/docs/CONFIG.md) to better understand your options.
 
 4. **Start the application**:
