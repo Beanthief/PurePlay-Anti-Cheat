@@ -11,7 +11,6 @@ import tkinter
 import optuna
 import XInput
 import pandas
-import shutil
 import mouse
 import numpy
 import json
@@ -684,7 +683,7 @@ def print_graph(indices, model_type, metric_history, aggregated_metric):
         matplotlib.pyplot.ylim(0, 0.5)
     matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
     matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
-    print(f'Live analysis complete. Graph saved.')
+    print(f'Analysis complete. Graph saved.')
 
 # =============================================================================
 # Configuration Loading Process
