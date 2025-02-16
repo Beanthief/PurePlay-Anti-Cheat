@@ -52,7 +52,7 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **kill_key**  
   *Type:* String  
-  *Default:* `"esc"`  
+  *Default:* `"\\"`  
   *Description:* The keyboard key that, when pressed, stops data collection. (Ensure that this key is not included in any device’s whitelist.)
 
 - **polling_rate**  
@@ -83,10 +83,12 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **sequence_length**  
   *Type:* Integer  
+  *Default:* `30`  
   *Description:* The number of time steps per input sequence.
 
 - **batch_size**  
   *Type:* Integer  
+  *Default:* `64`  
   *Description:* Number of sequences per training batch.
 
 ---
