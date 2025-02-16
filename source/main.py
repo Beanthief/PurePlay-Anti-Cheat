@@ -178,31 +178,19 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         return sequence
 
 # =============================================================================
-# Base Model
-# This base class defines the shared attributes of all other models that can be used in this program.
+# Recurrent Autoencoder
 # =============================================================================
-class BaseModel(lightning.LightningModule):
+class RecurrentAutoencoder(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters()  
+
         self.input_dimension = input_dimension
         self.hidden_dimension = hidden_dimension
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
-        self.trial = None
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        return optimizer
-
-# =============================================================================
-# Recurrent Autoencoder
-# Inherits from BaseModel.
-# =============================================================================
-class RecurrentAutoencoder(BaseModel):
-    def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
-        super().__init__(input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate)
         self.lstm_encoder = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
@@ -216,7 +204,11 @@ class RecurrentAutoencoder(BaseModel):
             batch_first=True
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
+
         self.loss_function = torch.nn.MSELoss()
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def forward(self, input_sequence):
         encoder_output, (hidden_state, cell_state) = self.lstm_encoder(input_sequence)
@@ -236,22 +228,37 @@ class RecurrentAutoencoder(BaseModel):
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
+    def test_step(self, batch, batch_idx):
+        reconstruction = self.forward(batch)
+        loss = self.loss_function(reconstruction, batch)
+        return {'test_loss': loss}
+
 # =============================================================================
-# Recurrent Classifier
-# Inherits from BaseModel.
-# For this model, num_layers and sequence_length are not naturally required.
-# Default values are provided.
+# Recurrent Binary Classifier
 # =============================================================================
-class RecurrentBinaryClassifier(BaseModel):
-    def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers=1, sequence_length=1):
-        super().__init__(input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate)
+class RecurrentBinaryClassifier(lightning.LightningModule):
+    def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length):
+        super().__init__()
+        self.save_hyperparameters()
+        
+        self.input_dimension = input_dimension
+        self.hidden_dimension = hidden_dimension
+        self.num_layers = num_layers
+        self.sequence_length = sequence_length
+        self.learning_rate = learning_rate
+        
         self.lstm = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
+            num_layers=num_layers,
             batch_first=True
         )
         self.classifier = torch.nn.Linear(hidden_dimension, 1)
+
         self.loss_function = torch.nn.BCEWithLogitsLoss()
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def forward(self, input_sequence):
         lstm_output, _ = self.lstm(input_sequence)
@@ -274,13 +281,27 @@ class RecurrentBinaryClassifier(BaseModel):
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
+    def test_step(self, batch, batch_idx):
+        input_data, target = batch
+        output = self.forward(input_data)
+        target = target.float()
+        loss = self.loss_function(output, target)
+        return {'test_loss': loss}
+
 # =============================================================================
 # Recurrent Predictor
-# Inherits from BaseModel.
 # =============================================================================
-class RecurrentPredictor(BaseModel):
+class RecurrentPredictor(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
-        super().__init__(input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate)
+        super().__init__()
+        self.save_hyperparameters()
+        
+        self.input_dimension = input_dimension
+        self.hidden_dimension = hidden_dimension
+        self.num_layers = num_layers
+        self.sequence_length = sequence_length
+        self.learning_rate = learning_rate
+        
         self.lstm = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
@@ -288,7 +309,11 @@ class RecurrentPredictor(BaseModel):
             batch_first=True
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
+
         self.loss_function = torch.nn.MSELoss()
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
     def forward(self, input_sequence):
         lstm_output, _ = self.lstm(input_sequence)
@@ -307,6 +332,12 @@ class RecurrentPredictor(BaseModel):
         loss = self.loss_function(prediction, target)
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
+
+    def test_step(self, batch, batch_idx):
+        prediction = self.forward(batch)
+        target = batch[:, -1, :]
+        loss = self.loss_function(prediction, target)
+        return {'test_loss': loss}
 
 # =============================================================================
 # Training Process
@@ -390,6 +421,8 @@ def train_model(configuration):
             model = RecurrentBinaryClassifier(
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
+                num_layers=trial_num_layers,
+                sequence_length=configuration.get('sequence_length', 30), 
                 learning_rate=trial_learning_rate
             )
         elif model_type == 'predictor':
@@ -445,6 +478,8 @@ def train_model(configuration):
         best_model = RecurrentBinaryClassifier(
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
+            num_layers=best_trial.params['num_layers'],
+            sequence_length=configuration.get('sequence_length', 30), 
             learning_rate=best_trial.params['learning_rate']
         )
     elif model_type == 'predictor':
@@ -491,24 +526,21 @@ def run_static_analysis(configuration):
     root = tkinter.Tk()
     root.withdraw()
     file = tkinter.filedialog.askopenfilename(
-        title=f'Select data file to analyze',
+        title='Select data file to analyze',
         filetypes=[('CSV Files', '*.csv')]
     )
 
-    root = tkinter.Tk()
-    root.withdraw()
     checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
     root.destroy()
 
-    sequence_length = configuration.get('sequence_length', 30)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
-    test_dataset = InputSequenceDataset(file, sequence_length, whitelist)
+    test_dataset = InputSequenceDataset(file, configuration.get('sequence_length', 30), whitelist)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model_type = configuration.get('model_type', 'autoencoder')
@@ -518,28 +550,19 @@ def run_static_analysis(configuration):
         model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
     elif model_type == 'predictor':
         model = RecurrentPredictor.load_from_checkpoint(checkpoint)
-    model.eval()
+
+    trainer = lightning.Trainer(
+        logger=False,
+        enable_checkpointing=False
+    )
+    test_output = trainer.test(model, dataloaders=test_dataloader, ckpt_path=None)
 
     indices = []
-    index_counter = 0
     metric_history = []
-
-    with torch.no_grad():
-        for batch in test_dataloader:
-            if model_type == 'autoencoder':
-                reconstruction = model(batch)
-                loss_value = model.loss_function(reconstruction, batch)
-                metric_history.append(loss_value.item())
-            elif model_type == 'classifier':
-                output = model(batch)
-                confidence, predicted = torch.max(output, dim=1)
-                metric_history.append(confidence.item())
-            elif model_type == 'predictor':
-                prediction = model(batch)
-                loss_value = model.loss_function(prediction, batch)
-                metric_history.append(loss_value.item())
-            indices.append(index_counter)
-            index_counter += 1
+    for i, output_dict in enumerate(test_output):
+        loss_tensor = output_dict['test_loss']
+        indices.append(i)
+        metric_history.append(loss_tensor.item())
     print_graph(indices, model_type, metric_history)
 
 # =============================================================================
