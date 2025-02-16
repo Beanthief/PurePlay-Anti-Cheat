@@ -72,7 +72,7 @@ if %errorlevel%==0 (
 )
 
 echo Creating new environment...
-call "%CONDA_PATH%" create -y -q -n PurePlay-Anti-Cheat -c pytorch python
+call "%CONDA_PATH%" create -y -q -n PurePlay-Anti-Cheat python
 if errorlevel 1 (
     echo Failed to create the environment.
     pause
@@ -90,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo Installing conda packages...
-call "%CONDA_PATH%" install -y -q pytorch pytorch-lightning pandas matplotlib optuna
+call "%CONDA_PATH%" install -y -q -c pytorch pytorch pytorch-lightning pandas matplotlib optuna
 if errorlevel 1 (
     echo Failed to install conda packages.
     pause

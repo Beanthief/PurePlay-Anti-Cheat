@@ -176,7 +176,6 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         sequence = self.data_tensor[start_index:start_index + self.sequence_length]
         return sequence
 
-
 # =============================================================================
 # Base Model
 # This base class defines the shared attributes of all other models that can be
