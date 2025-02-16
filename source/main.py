@@ -2,6 +2,8 @@ import pytorch_lightning.callbacks
 import tkinter.filedialog
 import matplotlib.pyplot
 import pytorch_lightning
+import torch.utils.data
+import torch.nn
 import keyboard
 import logging
 import tkinter
@@ -10,7 +12,6 @@ import XInput
 import pandas
 import mouse
 import numpy
-import torch
 import json
 import math
 import time
@@ -457,15 +458,9 @@ def train_model(configuration):
         patience=5,
         mode='min'
     )
-    early_save_callback = pytorch_lightning.callbacks.ModelCheckpoint(
-        monitor='val_loss', 
-        dirpath='models/', 
-        filename='model', 
-        save_top_k=1
-    )
     trainer = pytorch_lightning.Trainer(
         max_epochs=1000,
-        callbacks=[early_stop_callback, early_save_callback],
+        callbacks=[early_stop_callback],
         precision='16-mixed',
         logger=False,
     )
@@ -508,9 +503,15 @@ def run_static_analysis(configuration):
     test_dataset = InputSequenceDataset(file, sequence_length, whitelist)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint)
+    model_type = configuration.get('model_type', 'autoencoder')
+    if model_type == 'autoencoder':
+        model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
+    elif model_type == 'classifier':
+        model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
+    elif model_type == 'predictor':
+        model = RecurrentPredictor.load_from_checkpoint(checkpoint)
     model.eval()
-    
+
     indices = []
     index_counter = 0
     metric_history = []
@@ -560,7 +561,13 @@ def run_live_analysis(configuration):
     screen_height = root.winfo_screenheight()
     root.destroy()
 
-    model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint)
+    model_type = configuration.get('model_type', 'autoencoder')
+    if model_type == 'autoencoder':
+        model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
+    elif model_type == 'classifier':
+        model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
+    elif model_type == 'predictor':
+        model = RecurrentPredictor.load_from_checkpoint(checkpoint)
     model.eval()
 
     smallest_screen_dimension = min(screen_width, screen_height)
@@ -606,7 +613,10 @@ def run_live_analysis(configuration):
 # This function identifies the relevant graph and saves it as a png.
 # =============================================================================
 def print_graph(indices, model_type, metric_history):
-    os.makedirs('reports', exist_ok=True)
+    root = tkinter.Tk()
+    root.withdraw()
+    report_dir = tkinter.filedialog.askopenfilename(title='Select report save folder')
+    root.destroy()
     matplotlib.pyplot.figure()
     matplotlib.pyplot.plot(indices, metric_history)
     matplotlib.pyplot.xlabel('Sequence Index')
@@ -620,7 +630,7 @@ def print_graph(indices, model_type, metric_history):
         matplotlib.pyplot.ylabel('Prediction Loss')
         matplotlib.pyplot.ylim(0, 0.5)
     matplotlib.pyplot.title(f'Live Analysis - {model_type}')
-    matplotlib.pyplot.savefig(f'./reports/report_live_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
+    matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print(f'Live analysis complete. Graph saved.')
 
 # =============================================================================
