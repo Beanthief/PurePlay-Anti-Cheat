@@ -166,14 +166,16 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         remainder = len(self.data_array) % self.sequence_length
         if remainder != 0:
             self.data_array = self.data_array[:-remainder]
+        self.data_tensor = torch.from_numpy(self.data_array) # Convert to tensor for perf
 
     def __len__(self):
-        return len(self.data_array) // self.sequence_length
+        return len(self.data_tensor) // self.sequence_length
 
     def __getitem__(self, index):
         start_index = index * self.sequence_length
-        sequence = self.data_array[start_index:start_index + self.sequence_length]
+        sequence = self.data_tensor[start_index:start_index + self.sequence_length]
         return sequence
+
 
 # =============================================================================
 # Base Model
@@ -363,6 +365,7 @@ def train_model(configuration):
         training_dataset,
         num_workers=workers_per_loader,
         persistent_workers=True,
+        pin_memory=True,
         batch_size=configuration.get('batch_size', 32),
         shuffle=True
     )
@@ -370,6 +373,7 @@ def train_model(configuration):
         validation_dataset,
         num_workers=workers_per_loader,
         persistent_workers=True,
+        pin_memory=True,
         batch_size=configuration.get('batch_size', 32),
         shuffle=False
     )
