@@ -81,6 +81,16 @@ The mode is set by the `"mode"` key in `config.json`.
   *Possible Values:*  
     `DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, START, BACK, LEFT_THUMB, RIGHT_THUMB, LEFT_SHOULDER, RIGHT_SHOULDER, A, B, X, Y, LT, RT, LX, LY, RX, RY`
 
+- **tuning_patience**  
+  *Type:* Integer  
+  *Default:* `10`  
+  *Description:* The number of consecutive pruned tuning trials before early stopping.
+
+- **training_patience**  
+  *Type:* Integer  
+  *Default:* `10`  
+  *Description:* The number of consecutive epochs in training before early stopping.
+
 - **sequence_length**  
   *Type:* Integer  
   *Default:* `30`  

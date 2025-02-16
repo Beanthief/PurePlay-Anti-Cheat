@@ -1,4 +1,5 @@
 import lightning.pytorch.callbacks
+import optuna.integration
 import tkinter.filedialog
 import matplotlib.pyplot
 import torch.utils.data
@@ -10,13 +11,13 @@ import tkinter
 import optuna
 import XInput
 import pandas
+import shutil
 import mouse
 import numpy
 import json
 import math
 import time
 import csv
-import os
 
 # =============================================================================
 # Helper Function to Check Kill Key
@@ -178,9 +179,7 @@ class InputSequenceDataset(torch.utils.data.Dataset):
 
 # =============================================================================
 # Base Model
-# This base class defines the shared attributes of all other models that can be
-# used in this program. It provides a method for validation with optuna pruning 
-# enabled and configure_optimizers.
+# This base class defines the shared attributes of all other models that can be used in this program.
 # =============================================================================
 class BaseModel(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
@@ -192,18 +191,6 @@ class BaseModel(lightning.LightningModule):
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
         self.trial = None
-
-    def on_validation_epoch_end(self):
-        if not hasattr(self, '_last_reported_epoch'):
-            self._last_reported_epoch = -1
-        if self.current_epoch <= self._last_reported_epoch:
-            return
-        self._last_reported_epoch = self.current_epoch
-        val_loss = self.trainer.callback_metrics.get('val_loss')
-        if self.trial and (val_loss is not None):
-            self.trial.report(val_loss, self.current_epoch)
-            if self.trial.should_prune():
-                raise optuna.TrialPruned()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -324,7 +311,7 @@ class RecurrentPredictor(BaseModel):
 # =============================================================================
 # Training Process
 # This function trains a selected model type using a provided training data file and model parameters.
-# It creates a dataset and dataloader, initializes the appropriate model, trains it using PyTorch Lightning, and saves a checkpoint.
+# It creates a dataset and dataloader, initializes the appropriate model, tunes its hyperparameters with Optuna, trains it using PyTorch Lightning, and saves a checkpoint.
 # =============================================================================
 def train_model(configuration):
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
@@ -372,8 +359,20 @@ def train_model(configuration):
         shuffle=False
     )
 
+    class ConsecutivePrunedTrialsCallback:
+        def __init__(self, patience=10):
+            self.patience = patience
+            self.consecutive_pruned = 0
+        def __call__(self, study: optuna.Study, trial: optuna.Trial):
+            if trial.state == optuna.trial.TrialState.PRUNED:
+                self.consecutive_pruned += 1
+            else:
+                self.consecutive_pruned = 0
+            if self.consecutive_pruned >= self.patience:
+                print(f"Stopping study: {self.consecutive_pruned} consecutive pruned trials.")
+                study.stop()
     input_dimension = len(whitelist)
-    logging.getLogger('lightning').setLevel(logging.ERROR)
+    logging.getLogger("lightning.pytorch").setLevel(logging.ERROR)
     def objective(trial):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
@@ -402,9 +401,11 @@ def train_model(configuration):
                 learning_rate=trial_learning_rate
             )
         model.trial = trial
+        prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor="val_loss")
         trainer = lightning.Trainer(
-            max_epochs=5,
+            max_epochs=10,
             precision='16-mixed',
+            callbacks=[prune_callback],
             logger=False,
             enable_checkpointing=False,
             enable_progress_bar=False,
@@ -417,13 +418,20 @@ def train_model(configuration):
         return val_loss.item()
 
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=10, gc_after_trial=True, show_progress_bar=True)
+    consecutive_prune_callback = ConsecutivePrunedTrialsCallback(configuration.get('tuning_patience', 10))
+    study.optimize(
+        objective, 
+        n_trials=1000, 
+        callbacks=[consecutive_prune_callback], 
+        gc_after_trial=True, 
+        show_progress_bar=True
+    )
 
     print('Best trial:')
     best_trial = study.best_trial
     print(best_trial.params)
 
-    logging.getLogger('lightning').setLevel(logging.INFO)
+    logging.getLogger("lightning.pytorch").setLevel(logging.INFO)
     model_type = configuration.get('model_type', 'autoencoder')
     if model_type == 'autoencoder':
         best_model = RecurrentAutoencoder(
@@ -447,30 +455,32 @@ def train_model(configuration):
             sequence_length=configuration.get('sequence_length', 30), 
             learning_rate=best_trial.params['learning_rate']
         )
-    else:
-        raise ValueError(f'Invalid model type: {configuration.get('model_type', 'autoencoder')}')
-
-    early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
-        monitor='val_loss', 
-        min_delta=0.00001, 
-        patience=5,
-        mode='min'
-    )
-    trainer = lightning.Trainer(
-        max_epochs=1000,
-        callbacks=[early_stop_callback],
-        precision='16-mixed',
-        logger=False,
-    )
-    trainer.fit(best_model, training_dataloader, validation_dataloader)
-
+    
     root = tkinter.Tk()
     root.withdraw()
     save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
     root.destroy()
-    save_path = f'{save_dir}/model_{time.strftime('%Y%m%d-%H%M%S')}.ckpt'
-    trainer.save_checkpoint(save_path)
-    print(f'Model training complete. Checkpoint saved to: {save_path}')
+
+    early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
+        monitor='val_loss',
+        min_delta=-1e-8,
+        patience=configuration.get('training_patience', 10),
+        mode='min'
+    )
+    early_save_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+        monitor='val_loss',
+        dirpath=save_dir,
+        filename=f'{save_dir}/model_{time.strftime('%Y%m%d-%H%M%S')}',
+        save_top_k=1
+    )
+    trainer = lightning.Trainer(
+        max_epochs=1000,
+        callbacks=[early_stop_callback, early_save_callback],
+        precision='16-mixed',
+        logger=False
+    )
+    trainer.fit(best_model, training_dataloader, validation_dataloader)
+    print(f'Training complete. Model saved.')
 
 # =============================================================================
 # Static Analysis Process
