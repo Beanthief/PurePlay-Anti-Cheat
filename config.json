@@ -1,5 +1,5 @@
 {
-  "mode": "collect",
+  "mode": "train",
   "model_type": "autoencoder",
   "kill_key": "\\",
   "polling_rate": 60,

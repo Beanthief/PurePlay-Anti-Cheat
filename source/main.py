@@ -1,6 +1,6 @@
-import pytorch_lightning.callbacks #
-import tkinter.filedialog          # Why do these insist on being imported?
-import matplotlib.pyplot           #
+import pytorch_lightning.callbacks
+import tkinter.filedialog
+import matplotlib.pyplot
 import pytorch_lightning
 import keyboard
 import logging
@@ -162,12 +162,16 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         self.sequence_length = sequence_length
         self.feature_columns = [col for col in input_whitelist if col in self.data_frame.columns]
         self.data_array = self.data_frame[self.feature_columns].values.astype(numpy.float32)
+        remainder = len(self.data_array) % self.sequence_length
+        if remainder != 0:
+            self.data_array = self.data_array[:-remainder]
 
     def __len__(self):
-        return len(self.data_array) - self.sequence_length
+        return len(self.data_array) // self.sequence_length
 
     def __getitem__(self, index):
-        sequence = self.data_array[index:index + self.sequence_length]
+        start_index = index * self.sequence_length
+        sequence = self.data_array[start_index:start_index + self.sequence_length]
         return sequence
 
 # =============================================================================
@@ -333,23 +337,14 @@ def train_model(configuration):
         title='Select training data files',
         filetypes=[('CSV Files', '*.csv')]
     )
-    if train_files:
-        training_datasets = [
-            InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
-            for file in train_files
-        ]
-        training_dataset = torch.utils.data.ConcatDataset(training_datasets)
-        training_dataloader = torch.utils.data.DataLoader(
-            training_dataset,
-            num_workers=workers_per_loader,
-            persistent_workers=True,
-            pin_memory=True,
-            batch_size=configuration.get('batch_size', 32),
-            shuffle=True
-        )
-    else:
+    if not train_files:
         print('No training files selected. Exiting.')
         return
+    training_datasets = [
+        InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
+        for file in train_files
+    ]
+    training_dataset = torch.utils.data.ConcatDataset(training_datasets)
     validation_files = tkinter.filedialog.askopenfilenames(
         title='Select validation data files',
         filetypes=[('CSV Files', '*.csv')]
@@ -358,20 +353,11 @@ def train_model(configuration):
     if not validation_files:
         print('No validation files selected. Exiting.')
         return
-    
     validation_datasets = [
         InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
         for file in validation_files
     ]
     validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
-    validation_dataloader = torch.utils.data.DataLoader(
-        validation_dataset,
-        num_workers=workers_per_loader,
-        persistent_workers=True,
-        pin_memory=True,
-        batch_size=configuration.get('batch_size', 32),
-        shuffle=False
-    )
 
     input_dimension = len(whitelist)
     logging.getLogger('pytorch_lightning').setLevel(logging.ERROR)
@@ -379,6 +365,20 @@ def train_model(configuration):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
         trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
+        training_dataloader = torch.utils.data.DataLoader(
+            training_dataset,
+            num_workers=workers_per_loader,
+            persistent_workers=True,
+            batch_size=configuration.get('batch_size', 32),
+            shuffle=True
+        )
+        validation_dataloader = torch.utils.data.DataLoader(
+            validation_dataset,
+            num_workers=workers_per_loader,
+            persistent_workers=True,
+            batch_size=configuration.get('batch_size', 32),
+            shuffle=False
+        )
 
         model_type = configuration.get('model_type', 'autoencoder')
         if model_type == 'autoencoder':
