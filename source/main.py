@@ -515,22 +515,20 @@ def run_static_analysis(configuration):
     indices = []
     index_counter = 0
     metric_history = []
-    model_type = configuration['model_type']
 
     with torch.no_grad():
         for batch in test_dataloader:
-            batch_tensor = torch.tensor(batch)
             if model_type == 'autoencoder':
-                reconstruction = model(batch_tensor)
-                loss_value = model.loss_function(reconstruction, batch_tensor)
+                reconstruction = model(batch)
+                loss_value = model.loss_function(reconstruction, batch)
                 metric_history.append(loss_value.item())
             elif model_type == 'classifier':
-                output = model(batch_tensor)
+                output = model(batch)
                 confidence, predicted = torch.max(output, dim=1)
                 metric_history.append(confidence.item())
             elif model_type == 'predictor':
-                prediction = model(batch_tensor)
-                loss_value = model.loss_function(prediction, batch_tensor)
+                prediction = model(batch)
+                loss_value = model.loss_function(prediction, batch)
                 metric_history.append(loss_value.item())
             indices.append(index_counter)
             index_counter += 1
