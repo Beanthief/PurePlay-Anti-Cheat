@@ -121,51 +121,31 @@ def poll_gamepad(gamepad_whitelist):
 def collect_input_data(configuration):
     kill_key = configuration.get('kill_key', '\\')
     polling_rate = configuration.get('polling_rate', 60)
-    keyboard_features = [
-        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-        'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-        ')', '!', '@', '#', '$', '%', '^', '&', '*', '(', '`', '~',
-        '-', '_', '=', '+', '[', '{', ']', '}', '\\', '|',
-        ';', ':', "'", '"', ',', '<', '.', '>', '/', '?',
-        'enter', 'esc', 'backspace', 'tab', 'space',
-        'caps lock', 'num lock', 'scroll lock',
-        'home', 'end', 'page up', 'page down', 'insert', 'delete',
-        'left', 'right', 'up', 'down',
-        'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
-        'print screen', 'pause', 'break', 'windows', 'menu',
-        'right alt', 'ctrl', 'left shift', 'right shift', 'left windows', 'left alt', 'right windows', 'alt gr', 'windows', 'alt', 'shift', 'right ctrl', 'left ctrl'
-    ]
-    mouse_features = ['left', 'right', 'middle', 'x1', 'x2', 'angle', 'magnitude']
-    gamepad_features = [
-        'DPAD_UP', 'DPAD_DOWN', 'DPAD_LEFT', 'DPAD_RIGHT',
-        'START', 'BACK',
-        'LEFT_THUMB', 'RIGHT_THUMB',
-        'LEFT_SHOULDER', 'RIGHT_SHOULDER',
-        'A', 'B', 'X', 'Y', 'LT', 'RT', 'LX', 'LY', 'RX', 'RY'
-    ]
+    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
+    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
+    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
 
     root = tkinter.Tk()
     root.withdraw()
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
+    save_dir = tkinter.filedialog.askdirectory(title='Select data save folder')
     root.destroy()
-    
+
     smallest_screen_dimension = min(screen_width, screen_height)
     last_mouse_position = None
 
-    os.makedirs('data', exist_ok=True)
-    with open(f'./data/inputs_{time.strftime('%Y%m%d-%H%M%S')}.csv', mode='w', newline='') as file_handle:
+    with open(f'{save_dir}/inputs_{time.strftime('%Y%m%d-%H%M%S')}.csv', mode='w', newline='') as file_handle:
         csv_writer = csv.writer(file_handle)
-        header = keyboard_features + mouse_features + gamepad_features
+        header = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
         csv_writer.writerow(header)
         print(f'Polling devices for collection (press {kill_key} to stop)...')
         while True:
             if keyboard.is_pressed(kill_key):
                 break
-            kb_row = poll_keyboard(keyboard_features)
-            m_row, last_mouse_position = poll_mouse(mouse_features, smallest_screen_dimension, last_mouse_position)
-            gp_row = poll_gamepad(gamepad_features)
+            kb_row = poll_keyboard(keyboard_whitelist)
+            m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
+            gp_row = poll_gamepad(gamepad_whitelist)
             row = kb_row + m_row + gp_row
             csv_writer.writerow(row)
             time.sleep(1.0 / polling_rate)
@@ -199,6 +179,7 @@ class InputSequenceDataset(torch.utils.data.Dataset):
 class BaseModel(pytorch_lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
         super().__init__()
+        self.save_hyperparameters()
         self.input_dimension = input_dimension
         self.hidden_dimension = hidden_dimension
         self.num_layers = num_layers
@@ -424,7 +405,7 @@ def train_model(configuration):
             )
         model.trial = trial
         trainer = pytorch_lightning.Trainer(
-            max_epochs=3,
+            max_epochs=5,
             precision='16-mixed',
             logger=False,
             enable_checkpointing=False,
@@ -438,7 +419,7 @@ def train_model(configuration):
         return val_loss.item()
 
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=10, gc_after_trial=True)
+    study.optimize(objective, n_trials=10, gc_after_trial=True, show_progress_bar=True)
 
     print('Best trial:')
     best_trial = study.best_trial
@@ -473,21 +454,31 @@ def train_model(configuration):
 
     early_stop_callback = pytorch_lightning.callbacks.EarlyStopping(
         monitor='val_loss', 
-        min_delta=0.0001, 
+        min_delta=0.00001, 
         patience=5,
         mode='min'
     )
+    early_save_callback = pytorch_lightning.callbacks.ModelCheckpoint(
+        monitor='val_loss', 
+        dirpath='models/', 
+        filename='model', 
+        save_top_k=1
+    )
     trainer = pytorch_lightning.Trainer(
         max_epochs=1000,
-        callbacks=[early_stop_callback],
+        callbacks=[early_stop_callback, early_save_callback],
         precision='16-mixed',
         logger=False,
     )
     trainer.fit(best_model, training_dataloader, validation_dataloader)
-    os.makedirs('models', exist_ok=True)
-    ckpt_path = f'./models/model_{time.strftime('%Y%m%d-%H%M%S')}.ckpt'
-    trainer.save_checkpoint(ckpt_path)
-    print(f'Model training complete. Checkpoint saved to: {ckpt_path}')
+
+    root = tkinter.Tk()
+    root.withdraw()
+    save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
+    root.destroy()
+    save_path = f'{save_dir}/model_{time.strftime('%Y%m%d-%H%M%S')}.ckpt'
+    trainer.save_checkpoint(save_path)
+    print(f'Model training complete. Checkpoint saved to: {save_path}')
 
 # =============================================================================
 # Static Analysis Process
@@ -518,21 +509,14 @@ def run_static_analysis(configuration):
     test_dataset = InputSequenceDataset(file, sequence_length, whitelist)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model_type = configuration.get('model_type', 'autoencoder')
-    if model_type == 'autoencoder':
-        model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
-    elif model_type == 'classifier':
-        model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
-    elif model_type == 'predictor':
-        model = RecurrentPredictor.load_from_checkpoint(checkpoint)
-    else:
-        print(f'Invalid model type: {configuration.get('model_type', 'autoencoder')}')
-        return
-
+    model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint)
     model.eval()
-    metric_history = []
-    index_list = []
+    
+    indices = []
     index_counter = 0
+    metric_history = []
+    model_type = configuration['model_type']
+
     with torch.no_grad():
         for batch in test_dataloader:
             batch_tensor = torch.tensor(batch)
@@ -548,22 +532,9 @@ def run_static_analysis(configuration):
                 prediction = model(batch_tensor)
                 loss_value = model.loss_function(prediction, batch_tensor)
                 metric_history.append(loss_value.item())
-            index_list.append(index_counter)
+            indices.append(index_counter)
             index_counter += 1
-
-    os.makedirs('reports', exist_ok=True)
-    matplotlib.pyplot.figure()
-    matplotlib.pyplot.plot(index_list, metric_history)
-    matplotlib.pyplot.xlabel('Sequence Index')
-    if model_type == 'autoencoder':
-        matplotlib.pyplot.ylabel('Reconstruction Error')
-    elif model_type == 'classifier':
-        matplotlib.pyplot.ylabel('Confidence (Class 1)')
-    elif model_type == 'predictor':
-        matplotlib.pyplot.ylabel('Prediction Loss')
-    matplotlib.pyplot.title(f'Static Analysis - {model_type}')
-    matplotlib.pyplot.savefig(f'./reports/report_static_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
-    print(f'Static analysis complete. Graph saved.')
+    print_graph(indices, model_type, metric_history)
 
 # =============================================================================
 # Live Analysis Mode
@@ -590,22 +561,16 @@ def run_live_analysis(configuration):
     screen_height = root.winfo_screenheight()
     root.destroy()
 
-    model_type = configuration.get('model_type', 'autoencoder')
-    if model_type == 'autoencoder':
-        model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint, map_location=torch.device('cpu'))
-    elif model_type == 'classifier':
-        model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint, map_location=torch.device('cpu'))
-    elif model_type == 'predictor':
-        model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint, map_location=torch.device('cpu'))
-    else:
-        print(f'Invalid model type: {configuration.get('model_type', 'autoencoder')}')
-        return
+    model = pytorch_lightning.LightningModule.load_from_checkpoint(checkpoint)
     model.eval()
 
     smallest_screen_dimension = min(screen_width, screen_height)
     last_mouse_position = None
+    
     sequence = []
     metric_history = []
+    model_type = configuration['model_type']
+
     print(f'Polling devices for live analysis (press {kill_key} to stop)...')
     while True:
         if keyboard.is_pressed(kill_key):
@@ -634,18 +599,28 @@ def run_live_analysis(configuration):
             metric_history.append(metric_value)
             print(f'Live analysis metric: {metric_value}')
         time.sleep(1.0 / polling_rate)
-
-    os.makedirs('reports', exist_ok=True)
     indices = list(range(len(metric_history)))
+    print_graph(indices, model_type, metric_history)
+
+# =============================================================================
+# Helper Function to generate graphs
+# This function identifies the relevant graph and saves it as a png.
+# =============================================================================
+
+def print_graph(indices, model_type, metric_history):
+    os.makedirs('reports', exist_ok=True)
     matplotlib.pyplot.figure()
     matplotlib.pyplot.plot(indices, metric_history)
     matplotlib.pyplot.xlabel('Sequence Index')
     if model_type == 'autoencoder':
         matplotlib.pyplot.ylabel('Reconstruction Error')
+        matplotlib.pyplot.ylim(0, 0.5)
     elif model_type == 'classifier':
         matplotlib.pyplot.ylabel('Confidence (Class 1)')
+        matplotlib.pyplot.ylim(0, 1)
     elif model_type == 'predictor':
         matplotlib.pyplot.ylabel('Prediction Loss')
+        matplotlib.pyplot.ylim(0, 0.5)
     matplotlib.pyplot.title(f'Live Analysis - {model_type}')
     matplotlib.pyplot.savefig(f'./reports/report_live_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print(f'Live analysis complete. Graph saved.')

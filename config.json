@@ -1,5 +1,5 @@
 {
-  "mode": "train",
+  "mode": "collect",
   "model_type": "autoencoder",
   "kill_key": "\\",
   "polling_rate": 60,
@@ -7,5 +7,5 @@
   "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
   "sequence_length": 20,
-  "batch_size": 128
+  "batch_size": 64
 }
