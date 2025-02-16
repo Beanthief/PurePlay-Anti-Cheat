@@ -1,8 +1,8 @@
-import pytorch_lightning.callbacks
+import lightning.pytorch.callbacks
 import tkinter.filedialog
 import matplotlib.pyplot
-import pytorch_lightning
 import torch.utils.data
+import lightning
 import torch.nn
 import keyboard
 import logging
@@ -182,7 +182,7 @@ class InputSequenceDataset(torch.utils.data.Dataset):
 # used in this program. It provides a method for validation with optuna pruning 
 # enabled and configure_optimizers.
 # =============================================================================
-class BaseModel(pytorch_lightning.LightningModule):
+class BaseModel(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
         super().__init__()
         self.save_hyperparameters()
@@ -378,7 +378,7 @@ def train_model(configuration):
     )
 
     input_dimension = len(whitelist)
-    logging.getLogger('pytorch_lightning').setLevel(logging.ERROR)
+    logging.getLogger('lightning').setLevel(logging.ERROR)
     def objective(trial):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
@@ -407,7 +407,7 @@ def train_model(configuration):
                 learning_rate=trial_learning_rate
             )
         model.trial = trial
-        trainer = pytorch_lightning.Trainer(
+        trainer = lightning.Trainer(
             max_epochs=5,
             precision='16-mixed',
             logger=False,
@@ -428,7 +428,7 @@ def train_model(configuration):
     best_trial = study.best_trial
     print(best_trial.params)
 
-    logging.getLogger('pytorch_lightning').setLevel(logging.INFO)
+    logging.getLogger('lightning').setLevel(logging.INFO)
     model_type = configuration.get('model_type', 'autoencoder')
     if model_type == 'autoencoder':
         best_model = RecurrentAutoencoder(
@@ -455,13 +455,13 @@ def train_model(configuration):
     else:
         raise ValueError(f'Invalid model type: {configuration.get('model_type', 'autoencoder')}')
 
-    early_stop_callback = pytorch_lightning.callbacks.EarlyStopping(
+    early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
         monitor='val_loss', 
         min_delta=0.00001, 
         patience=5,
         mode='min'
     )
-    trainer = pytorch_lightning.Trainer(
+    trainer = lightning.Trainer(
         max_epochs=1000,
         callbacks=[early_stop_callback],
         precision='16-mixed',

@@ -90,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo Installing conda packages...
-call "%CONDA_PATH%" install -y -q -c pytorch pytorch pytorch-lightning pandas matplotlib optuna
+call "%CONDA_PATH%" install -y -q pytorch-gpu lightning pandas matplotlib optuna
 if errorlevel 1 (
     echo Failed to install conda packages.
     pause
