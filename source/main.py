@@ -331,7 +331,6 @@ def train_model(configuration):
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
-    workers_per_loader = max(1, os.cpu_count() // 3)
 
     root = tkinter.Tk()
     root.withdraw()
@@ -362,16 +361,12 @@ def train_model(configuration):
     validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
     training_dataloader = torch.utils.data.DataLoader(
         training_dataset,
-        num_workers=workers_per_loader,
-        persistent_workers=True,
         pin_memory=True,
         batch_size=configuration.get('batch_size', 32),
         shuffle=True
     )
     validation_dataloader = torch.utils.data.DataLoader(
         validation_dataset,
-        num_workers=workers_per_loader,
-        persistent_workers=True,
         pin_memory=True,
         batch_size=configuration.get('batch_size', 32),
         shuffle=False
