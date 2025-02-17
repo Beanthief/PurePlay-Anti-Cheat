@@ -17,9 +17,8 @@ The system operates in one of four modes:
 
 - **Model Training (`"train"`):**  
   Loads one or more CSV files containing input sequences and trains a model. Supported model types include:
-  - **Autoencoder:** Reconstructs input sequences.
-  - **Classifier:** Classifies input sequences using an LSTM followed by a fully connected layer.
-  - **Predictor:** Predicts the next input in a sequence.
+  - **Unsupervised:** Reconstructs input sequences given lots non-cheating data.
+  - **Supervised:** Classifies input sequences given lots of negative and positive data.
 
 - **Static Analysis (`"test"`):**  
   Uses a pre-trained model to analyze a selected CSV file, computes relevant metrics (such as reconstruction error, classification confidence, or prediction loss), and generates a report graph.
