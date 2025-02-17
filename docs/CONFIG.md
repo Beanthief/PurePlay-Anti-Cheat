@@ -1,6 +1,6 @@
 # Updated Configuration Guide
 
-This document provides an overview of the configuration options, input data properties, and training parameters used by the system. The system supports three model types—**autoencoder**, **classifier**, and **predictor**—and is organized around four primary modes of operation. The configuration is defined in a JSON file (`config.json`).
+This document provides an overview of the configuration options, input data properties, and training parameters used by the system. The system supports two model types: **unsupervised** and **supervised**. It is organized around four primary modes of operation. The configuration is defined in a JSON file (`config.json`).
 
 ## IMPORTANT
 
@@ -44,11 +44,11 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **model_type**  
   *Type:* String  
-  *Description:* Specifies the type of model to train.  
+  *Default:* `"unsupervised"`  
+  *Description:* Pick supervised if you have a specific cheat you want to catch or lots of positive cheating data and legitimate player data. Otherwise, pick unsupervised and only train on normal player data.  
   *Possible Values:*  
-  - `"autoencoder"` *(recommended)*
-  - `"classifier"`  
-  - `"predictor"`  
+  - `"unsupervised"`  
+  - `"supervised"`  
 
 - **kill_key**  
   *Type:* String  
@@ -83,19 +83,13 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **sequence_length**  
   *Type:* Integer  
-  *Default:* `20`  
+  *Default:* `60`  
   *Description:* The number of polls per input pattern you want to recognize.
 
 - **tuning_patience**  
   *Type:* Integer  
   *Default:* `10`  
   *Description:* The number of consecutive pruned tuning trials before early stopping.  
-  *Recommendation:* Increase as you decrease sequence length.
-
-- **training_patience**  
-  *Type:* Integer  
-  *Default:* `10`  
-  *Description:* The number of consecutive epochs in training before early stopping.  
   *Recommendation:* Increase as you decrease sequence length.
 
 - **batch_size**  
@@ -142,30 +136,19 @@ The training and evaluation process generates three distinct types of graphs. Ea
 ### 4.1 Reconstruction Error Graph
 
 - **What It Shows:**  
-  This graph plots the reconstruction error when using an `"autoencoder"`.
+  This graph plots the reconstruction error when using the `"unsupervised"` model.
 - **How to Interpret:**  
   - **Low Reconstruction Error:** Suggests that the autoencoder recognizes the player's behavior as normal relative to your training data.
   - **High Reconstruction Error:** May indicate the randomness of normal player behavior. Frequent spikes may indicate poor training data or a cheating player.
 - **Use Case:**  
   This method is generally easier and ideal as it requires only negative training data.
 
-### 4.2 Accumulated Prediction Loss Graph
+### 4.2 Targeted Class Confidence Graph
 
 - **What It Shows:**  
-  This graph plots the prediction loss when using a `"predictor"`.
+  This graph presents the `"supervised"` model’s confidence (or probability) that the player is cheating.
 - **How to Interpret:**  
-  - **Low Prediction Loss:** Indicates that the player is performing a predictable behavior pattern.
-  - **High Prediction Loss:** May signal that the model is struggling to capture the underlying patterns in the data, or that the player is augmenting their inputs.
-- **Use Case:**  
-  This method allows you to use a supervised approach to identify specific cheating patterns.
-
-### 4.3 Targeted Class Confidence Graph
-
-- **What It Shows:**  
-  This graph presents the model’s confidence (or probability) for a specific target class when using a `"classifier"`.
-- **How to Interpret:**  
-  - **High Confidence:** When the model assigns a high probability to the targeted class, it reflects the model's certainty of it being that class.
-  - **Low Confidence:** A lower value might indicate uncertainty or that the input data aligns with normal player behavior.
+  The higher the graph, the higher the confidence that the player is cheating. You may want to determine a threshold for automatic flagging.
 - **Use Case:**  
   As a supervised approach, this is useful for when you can isolate and identify specific cheating input patterns.
 

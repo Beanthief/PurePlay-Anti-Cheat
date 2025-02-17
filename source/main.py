@@ -167,7 +167,7 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         remainder = len(self.data_array) % self.sequence_length
         if remainder != 0:
             self.data_array = self.data_array[:-remainder]
-        self.data_tensor = torch.from_numpy(self.data_array) # Convert to tensor for perf
+        self.data_tensor = torch.from_numpy(self.data_array)
 
     def __len__(self):
         return len(self.data_tensor) // self.sequence_length
@@ -178,12 +178,12 @@ class InputSequenceDataset(torch.utils.data.Dataset):
         return sequence
 
 # =============================================================================
-# Recurrent Autoencoder
+# Models
 # =============================================================================
-class RecurrentAutoencoder(lightning.LightningModule):
+class UnsupervisedModel(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
         super().__init__()
-        self.save_hyperparameters()  
+        self.save_hyperparameters()
         self.input_dimension = input_dimension
         self.hidden_dimension = hidden_dimension
         self.num_layers = num_layers
@@ -193,13 +193,17 @@ class RecurrentAutoencoder(lightning.LightningModule):
             input_size=input_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
-            batch_first=True
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.1
         )
         self.lstm_decoder = torch.nn.LSTM(
             input_size=hidden_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
-            batch_first=True
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.1
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
         self.loss_function = torch.nn.MSELoss()
@@ -238,10 +242,7 @@ class RecurrentAutoencoder(lightning.LightningModule):
         self.log("agg_metric", average_error)
         return {"agg_metric": average_error}
 
-# =============================================================================
-# Recurrent Binary Classifier
-# =============================================================================
-class RecurrentBinaryClassifier(lightning.LightningModule):
+class SupervisedModel(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length):
         super().__init__()
         self.save_hyperparameters()
@@ -256,7 +257,7 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
             num_layers=num_layers,
             batch_first=True
         )
-        self.classifier = torch.nn.Linear(hidden_dimension, 1)
+        self.supervised = torch.nn.Linear(hidden_dimension, 1)
         self.loss_function = torch.nn.BCEWithLogitsLoss()
         self.test_metric_history = []
 
@@ -266,7 +267,7 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
     def forward(self, input_sequence):
         lstm_output, _ = self.lstm(input_sequence)
         last_output = lstm_output[:, -1, :]
-        classification_output = self.classifier(last_output).squeeze(1)
+        classification_output = self.supervised(last_output).squeeze(1)
         return classification_output
 
     def training_step(self, batch, batch_idx):
@@ -302,64 +303,6 @@ class RecurrentBinaryClassifier(lightning.LightningModule):
         average_confidence = torch.stack(self.test_metric_history).mean()
         self.log("agg_metric", average_confidence)
         return {"agg_metric": average_confidence}
-
-# =============================================================================
-# Recurrent Predictor
-# =============================================================================
-class RecurrentPredictor(lightning.LightningModule):
-    def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
-        super().__init__()
-        self.save_hyperparameters()
-        
-        self.input_dimension = input_dimension
-        self.hidden_dimension = hidden_dimension
-        self.num_layers = num_layers
-        self.sequence_length = sequence_length
-        self.learning_rate = learning_rate
-        
-        self.lstm = torch.nn.LSTM(
-            input_size=input_dimension,
-            hidden_size=hidden_dimension,
-            num_layers=num_layers,
-            batch_first=True
-        )
-        self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
-        self.loss_function = torch.nn.MSELoss()
-        self.test_metric_history = []
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-
-    def forward(self, input_sequence):
-        lstm_output, _ = self.lstm(input_sequence)
-        prediction = self.output_layer(lstm_output[:, -1, :])
-        return prediction
-
-    def training_step(self, batch, batch_idx):
-        prediction = self.forward(batch)
-        target = batch[:, -1, :]
-        loss = self.loss_function(prediction, target)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        prediction = self.forward(batch)
-        target = batch[:, -1, :]
-        loss = self.loss_function(prediction, target)
-        self.log('val_loss', loss, prog_bar=True, on_epoch=True)
-        return loss
-    
-    def test_step(self, batch, batch_idx):
-        prediction = self.forward(batch)
-        target = batch[:, -1, :]
-        prediction_loss = self.loss_function(prediction, target)
-        self.test_metric_history.append(prediction_loss.detach().cpu())
-        self.log("metric", prediction_loss)
-        return {"metric": prediction_loss}
-
-    def on_test_epoch_end(self):
-        average_error = torch.stack(self.test_metric_history).mean()
-        self.log("agg_metric", average_error)
-        return {"agg_metric": average_error}
 
 # =============================================================================
 # Training Process
@@ -430,25 +373,17 @@ def train_model(configuration):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
         trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
-        model_type = configuration.get('model_type', 'autoencoder')
-        if model_type == 'autoencoder':
-            model = RecurrentAutoencoder(
+        model_type = configuration.get('model_type', 'unsupervised')
+        if model_type == 'unsupervised':
+            model = UnsupervisedModel(
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
                 num_layers=trial_num_layers,
                 sequence_length=configuration.get('sequence_length', 60), 
                 learning_rate=trial_learning_rate
             )
-        elif model_type == 'classifier':
-            model = RecurrentBinaryClassifier(
-                input_dimension=input_dimension, 
-                hidden_dimension=trial_hidden_dim, 
-                num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 60), 
-                learning_rate=trial_learning_rate
-            )
-        elif model_type == 'predictor':
-            model = RecurrentPredictor(
+        elif model_type == 'supervised':
+            model = SupervisedModel(
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
                 num_layers=trial_num_layers,
@@ -487,32 +422,24 @@ def train_model(configuration):
     print(best_trial.params)
 
     logging.getLogger("lightning.pytorch").setLevel(logging.INFO)
-    model_type = configuration.get('model_type', 'autoencoder')
-    if model_type == 'autoencoder':
-        best_model = RecurrentAutoencoder(
+    model_type = configuration.get('model_type', 'unsupervised')
+    if model_type == 'unsupervised':
+        best_model = UnsupervisedModel(
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
             num_layers=best_trial.params['num_layers'],
             sequence_length=configuration.get('sequence_length', 60), 
             learning_rate=best_trial.params['learning_rate']
         )
-    elif model_type == 'classifier':
-        best_model = RecurrentBinaryClassifier(
+    elif model_type == 'supervised':
+        best_model = SupervisedModel(
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
             num_layers=best_trial.params['num_layers'],
             sequence_length=configuration.get('sequence_length', 60), 
             learning_rate=best_trial.params['learning_rate']
         )
-    elif model_type == 'predictor':
-        best_model = RecurrentPredictor(
-            input_dimension=input_dimension, 
-            hidden_dimension=best_trial.params['hidden_dim'], 
-            num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 60), 
-            learning_rate=best_trial.params['learning_rate']
-        )
-    
+
     root = tkinter.Tk()
     root.withdraw()
     save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
@@ -565,13 +492,11 @@ def run_static_analysis(configuration):
     test_dataset = InputSequenceDataset(file, configuration.get('sequence_length', 60), whitelist)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model_type = configuration.get('model_type', 'autoencoder')
-    if model_type == 'autoencoder':
-        model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
-    elif model_type == 'classifier':
-        model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
-    elif model_type == 'predictor':
-        model = RecurrentPredictor.load_from_checkpoint(checkpoint)
+    model_type = configuration.get('model_type', 'unsupervised')
+    if model_type == 'unsupervised':
+        model = UnsupervisedModel.load_from_checkpoint(checkpoint)
+    elif model_type == 'supervised':
+        model = SupervisedModel.load_from_checkpoint(checkpoint)
 
     trainer = lightning.Trainer(
         logger=False,
@@ -608,13 +533,11 @@ def run_live_analysis(configuration):
     root.destroy()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_type = configuration.get('model_type', 'autoencoder')
-    if model_type == 'autoencoder':
-        model = RecurrentAutoencoder.load_from_checkpoint(checkpoint)
-    elif model_type == 'classifier':
-        model = RecurrentBinaryClassifier.load_from_checkpoint(checkpoint)
-    elif model_type == 'predictor':
-        model = RecurrentPredictor.load_from_checkpoint(checkpoint)
+    model_type = configuration.get('model_type', 'unsupervised')
+    if model_type == 'unsupervised':
+        model = UnsupervisedModel.load_from_checkpoint(checkpoint)
+    elif model_type == 'supervised':
+        model = SupervisedModel.load_from_checkpoint(checkpoint)
     else:
         print(f"Unrecognized model type '{model_type}'. Exiting.")
         return
@@ -636,18 +559,14 @@ def run_live_analysis(configuration):
         sequence.append(row)
         if len(sequence) >= sequence_length:
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
-            if model_type == 'autoencoder':
+            if model_type == 'unsupervised':
                 reconstruction = model(input_sequence)
                 loss_value = model.loss_function(reconstruction, input_sequence)
                 metric_value = loss_value.item()
-            elif model_type == 'classifier':
+            elif model_type == 'supervised':
                 logits = model(input_sequence)
                 confidence = torch.sigmoid(logits).mean()
                 metric_value = confidence.item()
-            elif model_type == 'predictor':
-                prediction = model(input_sequence)
-                loss_value = model.loss_function(prediction, input_sequence)
-                metric_value = loss_value.item()
             else:
                 metric_value = 0.0
             model.test_metric_history.append(metric_value)
@@ -673,15 +592,12 @@ def print_graph(indices, model_type, metric_history, aggregated_metric):
     matplotlib.pyplot.figure()
     matplotlib.pyplot.plot(indices, metric_history)
     matplotlib.pyplot.xlabel('Sequence Index')
-    if model_type == 'autoencoder':
+    if model_type == 'unsupervised':
         matplotlib.pyplot.ylabel('Reconstruction Error')
         matplotlib.pyplot.ylim(0, 0.5)
-    elif model_type == 'classifier':
+    elif model_type == 'supervised':
         matplotlib.pyplot.ylabel('Confidence (Class 1)')
         matplotlib.pyplot.ylim(0, 1)
-    elif model_type == 'predictor':
-        matplotlib.pyplot.ylabel('Prediction Loss')
-        matplotlib.pyplot.ylim(0, 0.5)
     matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
     matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
     print(f'Analysis complete. Graph saved.')
