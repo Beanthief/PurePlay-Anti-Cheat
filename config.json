@@ -6,7 +6,7 @@
   "keyboard_whitelist": [],
   "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
-  "sequence_length": 30,
+  "sequence_length": 20,
   "tuning_patience": 10,
   "training_patience": 10,
   "batch_size": 64

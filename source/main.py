@@ -381,7 +381,7 @@ def train_model(configuration):
         print('No training files selected. Exiting.')
         return
     training_datasets = [
-        InputSequenceDataset(file, configuration.get('sequence_length', 30), whitelist)
+        InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
         for file in train_files
     ]
     training_dataset = torch.utils.data.ConcatDataset(training_datasets)
@@ -394,7 +394,7 @@ def train_model(configuration):
         print('No validation files selected. Exiting.')
         return
     validation_datasets = [
-        InputSequenceDataset(file, configuration.get('sequence_length', 30), whitelist)
+        InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
         for file in validation_files
     ]
     validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
@@ -435,7 +435,7 @@ def train_model(configuration):
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
                 num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 30), 
+                sequence_length=configuration.get('sequence_length', 20), 
                 learning_rate=trial_learning_rate
             )
         elif model_type == 'classifier':
@@ -443,7 +443,7 @@ def train_model(configuration):
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
                 num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 30), 
+                sequence_length=configuration.get('sequence_length', 20), 
                 learning_rate=trial_learning_rate
             )
         elif model_type == 'predictor':
@@ -451,7 +451,7 @@ def train_model(configuration):
                 input_dimension=input_dimension, 
                 hidden_dimension=trial_hidden_dim, 
                 num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 30), 
+                sequence_length=configuration.get('sequence_length', 20), 
                 learning_rate=trial_learning_rate
             )
         model.trial = trial
@@ -492,7 +492,7 @@ def train_model(configuration):
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
             num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 30), 
+            sequence_length=configuration.get('sequence_length', 20), 
             learning_rate=best_trial.params['learning_rate']
         )
     elif model_type == 'classifier':
@@ -500,7 +500,7 @@ def train_model(configuration):
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
             num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 30), 
+            sequence_length=configuration.get('sequence_length', 20), 
             learning_rate=best_trial.params['learning_rate']
         )
     elif model_type == 'predictor':
@@ -508,7 +508,7 @@ def train_model(configuration):
             input_dimension=input_dimension, 
             hidden_dimension=best_trial.params['hidden_dim'], 
             num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 30), 
+            sequence_length=configuration.get('sequence_length', 20), 
             learning_rate=best_trial.params['learning_rate']
         )
     
@@ -558,10 +558,10 @@ def run_static_analysis(configuration):
     root.destroy()
 
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
+    mouse_whitelist = configuration.get('mouse_whitelist', ['angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
-    test_dataset = InputSequenceDataset(file, configuration.get('sequence_length', 30), whitelist)
+    test_dataset = InputSequenceDataset(file, configuration.get('sequence_length', 20), whitelist)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model_type = configuration.get('model_type', 'autoencoder')
@@ -591,7 +591,7 @@ def run_static_analysis(configuration):
 def run_live_analysis(configuration):
     kill_key = configuration.get('kill_key', '\\')
     polling_rate = configuration.get('polling_rate', 60)
-    sequence_length = configuration.get('sequence_length', 30)
+    sequence_length = configuration.get('sequence_length', 20)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])

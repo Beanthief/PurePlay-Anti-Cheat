@@ -69,7 +69,7 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **mouse_whitelist**  
   *Type:* Array of Strings  
-  *Default:* `["left", "right", "angle", "magnitude"]`  
+  *Default:* `["angle", "magnitude"]`  
   *Description:* List of mouse features to capture.  
   *Possible Values:*  
     `left, right, middle, x1, x2, angle, magnitude`  
@@ -81,20 +81,22 @@ The mode is set by the `"mode"` key in `config.json`.
   *Possible Values:*  
     `DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, START, BACK, LEFT_THUMB, RIGHT_THUMB, LEFT_SHOULDER, RIGHT_SHOULDER, A, B, X, Y, LT, RT, LX, LY, RX, RY`
 
+- **sequence_length**  
+  *Type:* Integer  
+  *Default:* `20`  
+  *Description:* The number of polls per input pattern you want to recognize.
+
 - **tuning_patience**  
   *Type:* Integer  
   *Default:* `10`  
-  *Description:* The number of consecutive pruned tuning trials before early stopping.
+  *Description:* The number of consecutive pruned tuning trials before early stopping.  
+  *Recommendation:* Increase as you decrease sequence length.
 
 - **training_patience**  
   *Type:* Integer  
   *Default:* `10`  
-  *Description:* The number of consecutive epochs in training before early stopping.
-
-- **sequence_length**  
-  *Type:* Integer  
-  *Default:* `30`  
-  *Description:* The number of time steps per input sequence.
+  *Description:* The number of consecutive epochs in training before early stopping.  
+  *Recommendation:* Increase as you decrease sequence length.
 
 - **batch_size**  
   *Type:* Integer  
