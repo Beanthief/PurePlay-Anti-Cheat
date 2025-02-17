@@ -1,12 +1,12 @@
 {
-  "mode": "test",
+  "mode": "collect",
   "model_type": "autoencoder",
   "kill_key": "\\",
   "polling_rate": 60,
-  "keyboard_whitelist": [],
-  "mouse_whitelist": ["angle", "magnitude"],
-  "gamepad_whitelist": [],
-  "sequence_length": 20,
+  "keyboard_whitelist": ["w", "a", "s", "d", "space", "ctrl"],
+  "mouse_whitelist": ["left", "right", "angle", "magnitude"],
+  "gamepad_whitelist": ["LT", "RT", "LX", "LY", "RX", "RY"],
+  "sequence_length": 60,
   "tuning_patience": 10,
   "training_patience": 10,
   "batch_size": 64
