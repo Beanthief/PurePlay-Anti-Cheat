@@ -581,7 +581,7 @@ def run_live_analysis(configuration):
     print_graph(indices, model_type, model.test_metric_history, aggregated_metric)
 
 # =============================================================================
-# Helper Function to generate graphs
+# Helper Function to Generate Graphs
 # This function identifies the relevant graph and saves it as a png.
 # =============================================================================
 def print_graph(indices, model_type, metric_history, aggregated_metric):

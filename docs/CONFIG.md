@@ -91,6 +91,12 @@ The mode is set by the `"mode"` key in `config.json`.
   *Description:* The number of consecutive pruned tuning trials before early stopping.  
   *Recommendation:* Increase as you decrease sequence length.
 
+- **training_patience**  
+  *Type:* Integer  
+  *Default:* `10`  
+  *Description:* The number of consecutive epochs in training before early stopping.  
+  *Recommendation:* Increase as you decrease sequence length.
+
 - **batch_size**  
   *Type:* Integer  
   *Default:* `64`  
