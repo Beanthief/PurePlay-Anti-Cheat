@@ -19,24 +19,7 @@ import time
 import csv
 
 # =============================================================================
-# Helper Function to Check Kill Key
-# This function checks whether the pressed key matches the configured kill key.
-# It supports keys with a 'char' attribute as well as keys with a 'name' attribute.
-# =============================================================================
-def is_kill_key(key, kill_key_str):
-    if hasattr(key, 'char'):
-        if key.char is not None and key.char.lower() == kill_key_str.lower():
-            return True
-    if hasattr(key, 'name'):
-        if key.name.lower() == kill_key_str.lower():
-            return True
-    return False
-
-# =============================================================================
 # Helper Function to Poll Keyboard
-# This function polls the keyboard for each key in the whitelist.
-# It returns a list where each element is 1 if the key is currently pressed, else 0.
-# All features are in the range [0, 1].
 # =============================================================================
 def poll_keyboard(keyboard_whitelist):
     row = [1 if keyboard.is_pressed(key) else 0 for key in keyboard_whitelist]
@@ -44,10 +27,6 @@ def poll_keyboard(keyboard_whitelist):
 
 # =============================================================================
 # Helper Function to Poll Mouse
-# This function polls the mouse for button states and computes the normalized angle and magnitude
-# of movement from the previous poll. The normalization is done using the smallest screen dimension.
-# It returns a tuple: (mouse_row, updated_last_position)
-# All features are in the range [0, 1] with the exception of mouse magnitude [0, infinity] <- this doesn't matter as it is generally centered around 0.5.
 # =============================================================================
 def poll_mouse(mouse_whitelist, scale, last_position):
     row = []
@@ -78,10 +57,6 @@ def poll_mouse(mouse_whitelist, scale, last_position):
 
 # =============================================================================
 # Helper Function to Poll Gamepad
-# This function polls the gamepad (if connected) using XInput.
-# It returns a list of values for each feature in the gamepad whitelist.
-# For digital buttons, a value of 1 (pressed) or 0 is returned; for analog values (triggers, thumb sticks), numeric values are returned.
-# All features are in the range [0, 1].
 # =============================================================================
 def poll_gamepad(gamepad_whitelist):
     row = []
@@ -116,23 +91,17 @@ def poll_gamepad(gamepad_whitelist):
 
 # =============================================================================
 # Collection Mode
-# This function polls the keyboard, mouse, and gamepad at a fixed rate and writes the combined data row
-# to a CSV file. The data row is formed by concatenating the keyboard, mouse, and gamepad rows.
-# Polling continues until the configured kill key is pressed.
 # =============================================================================
-def collect_input_data(configuration):
+def collect_input_data(configuration, root):
     kill_key = configuration.get('kill_key', '\\')
     polling_rate = configuration.get('polling_rate', 60)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
 
-    root = tkinter.Tk()
-    root.withdraw()
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     save_dir = tkinter.filedialog.askdirectory(title='Select data save folder')
-    root.destroy()
 
     smallest_screen_dimension = min(screen_width, screen_height)
     last_mouse_position = None
@@ -154,28 +123,28 @@ def collect_input_data(configuration):
     print(f'Data collection stopped. Inputs saved.')
 
 # =============================================================================
-# Input Sequence Dataset
-# This dataset class loads input data from a CSV file and returns sequences of input features for training.
-# The CSV file is assumed to have additional columns for each input feature.
+# Dataset
 # =============================================================================
-class InputSequenceDataset(torch.utils.data.Dataset):
-    def __init__(self, data_file, sequence_length, input_whitelist):
-        self.data_frame = pandas.read_csv(data_file)
+class InputDataset(torch.utils.data.Dataset):
+    def __init__(self, file_path, sequence_length, whitelist, label=0):
         self.sequence_length = sequence_length
-        self.feature_columns = [col for col in input_whitelist if col in self.data_frame.columns]
-        self.data_array = self.data_frame[self.feature_columns].values.astype(numpy.float32)
-        remainder = len(self.data_array) % self.sequence_length
+        self.label = label
+
+        data_frame = pandas.read_csv(file_path)
+        self.feature_columns = [col for col in whitelist if col in data_frame.columns]
+        data_array = data_frame[self.feature_columns].values.astype(numpy.float32)
+        remainder = len(data_array) % sequence_length
         if remainder != 0:
-            self.data_array = self.data_array[:-remainder]
-        self.data_tensor = torch.from_numpy(self.data_array)
+            data_array = data_array[:-remainder]
+        self.data_tensor = torch.from_numpy(data_array)
 
     def __len__(self):
         return len(self.data_tensor) // self.sequence_length
 
-    def __getitem__(self, index):
-        start_index = index * self.sequence_length
-        sequence = self.data_tensor[start_index:start_index + self.sequence_length]
-        return sequence
+    def __getitem__(self, idx):
+        start_idx = idx * self.sequence_length
+        seq = self.data_tensor[start_idx : start_idx + self.sequence_length]
+        return seq, torch.tensor(self.label, dtype=torch.float32)
 
 # =============================================================================
 # Models
@@ -189,12 +158,12 @@ class UnsupervisedModel(lightning.LightningModule):
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
+
         self.lstm_encoder = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
             batch_first=True,
-            bidirectional=True,
             dropout=0.1
         )
         self.lstm_decoder = torch.nn.LSTM(
@@ -202,7 +171,6 @@ class UnsupervisedModel(lightning.LightningModule):
             hidden_size=hidden_dimension,
             num_layers=num_layers,
             batch_first=True,
-            bidirectional=True,
             dropout=0.1
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
@@ -220,27 +188,31 @@ class UnsupervisedModel(lightning.LightningModule):
         return reconstruction
 
     def training_step(self, batch, batch_idx):
-        reconstruction = self.forward(batch)
-        reconstruction_error = self.loss_function(reconstruction, batch)
+        inputs, labels = batch
+        reconstruction = self.forward(inputs)
+        reconstruction_error = self.loss_function(reconstruction, inputs)
+        self.log('train_loss', reconstruction_error, prog_bar=True, on_epoch=True)
         return reconstruction_error
 
     def validation_step(self, batch, batch_idx):
-        reconstruction = self.forward(batch)
-        reconstruction_error = self.loss_function(reconstruction, batch)
+        inputs, labels = batch
+        reconstruction = self.forward(inputs)
+        reconstruction_error = self.loss_function(reconstruction, inputs)
         self.log('val_loss', reconstruction_error, prog_bar=True, on_epoch=True)
         return reconstruction_error
 
     def test_step(self, batch, batch_idx):
-        reconstruction = self.forward(batch)
-        reconstruction_error = self.loss_function(reconstruction, batch)
+        inputs, labels = batch
+        reconstruction = self.forward(inputs)
+        reconstruction_error = self.loss_function(reconstruction, inputs)
         self.test_metric_history.append(reconstruction_error.detach().cpu())
-        self.log("metric", reconstruction_error)
-        return {"metric": reconstruction_error}
+        self.log('metric', reconstruction_error)
+        return {'metric': reconstruction_error}
 
     def on_test_epoch_end(self):
         average_error = torch.stack(self.test_metric_history).mean()
-        self.log("agg_metric", average_error)
-        return {"agg_metric": average_error}
+        self.log('agg_metric', average_error)
+        return {'agg_metric': average_error}
 
 class SupervisedModel(lightning.LightningModule):
     def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length):
@@ -251,13 +223,14 @@ class SupervisedModel(lightning.LightningModule):
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
+
         self.lstm = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
             batch_first=True
         )
-        self.supervised = torch.nn.Linear(hidden_dimension, 1)
+        self.supervised_layer = torch.nn.Linear(hidden_dimension, 1)
         self.loss_function = torch.nn.BCEWithLogitsLoss()
         self.test_metric_history = []
 
@@ -267,131 +240,128 @@ class SupervisedModel(lightning.LightningModule):
     def forward(self, input_sequence):
         lstm_output, _ = self.lstm(input_sequence)
         last_output = lstm_output[:, -1, :]
-        classification_output = self.supervised(last_output).squeeze(1)
+        classification_output = self.supervised_layer(last_output).squeeze(1)
         return classification_output
 
     def training_step(self, batch, batch_idx):
-        input_data, target = batch
-        output = self.forward(input_data)
-        target = target.float()
-        loss = self.loss_function(output, target)
+        inputs, labels = batch
+        output = self.forward(inputs)
+        loss = self.loss_function(output, labels)
+        self.log('train_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input_data, target = batch
-        output = self.forward(input_data)
-        target = target.float()
-        loss = self.loss_function(output, target)
+        inputs, labels = batch
+        output = self.forward(inputs)
+        loss = self.loss_function(output, labels)
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
     def test_step(self, batch, batch_idx):
-        input_data, target = batch
-        logits = self(input_data)
-        confidence = torch.sigmoid(logits)
-        return {"metric": confidence.mean()}
-
-    def test_step(self, batch, batch_idx):
-        input_data, target = batch
-        logits = self.forward(input_data)
+        inputs, labels = batch
+        logits = self.forward(inputs)
         confidence = torch.sigmoid(logits)
         self.test_metric_history.append(confidence.detach().cpu())
-        self.log("metric", confidence)
-        return {"metric": confidence}
+        self.log('metric', confidence.mean())
+        return {'metric': confidence}
 
     def on_test_epoch_end(self):
         average_confidence = torch.stack(self.test_metric_history).mean()
-        self.log("agg_metric", average_confidence)
-        return {"agg_metric": average_confidence}
+        self.log('agg_metric', average_confidence)
+        return {'agg_metric': average_confidence}
 
 # =============================================================================
 # Training Process
-# This function trains a selected model type using a provided training data file and model parameters.
-# It creates a dataset and dataloader, initializes the appropriate model, tunes its hyperparameters with Optuna, trains it using PyTorch Lightning, and saves a checkpoint.
 # =============================================================================
 def train_model(configuration):
+    model_type = configuration.get('model_type', 'unsupervised')
+    sequence_length = configuration.get('sequence_length', 60)
+    batch_size = configuration.get('batch_size', 32)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
 
-    root = tkinter.Tk()
-    root.withdraw()
     train_files = tkinter.filedialog.askopenfilenames(
-        title='Select training data files',
+        title='Select non-cheat training files',
         filetypes=[('CSV Files', '*.csv')]
     )
     if not train_files:
-        print('No training files selected. Exiting.')
+        print('No training files selected. Exiting...')
         return
-    training_datasets = [
-        InputSequenceDataset(file, configuration.get('sequence_length', 60), whitelist)
-        for file in train_files
-    ]
-    training_dataset = torch.utils.data.ConcatDataset(training_datasets)
-    validation_files = tkinter.filedialog.askopenfilenames(
-        title='Select validation data files',
+    val_files = tkinter.filedialog.askopenfilenames(
+        title='Select non-cheat validation files',
         filetypes=[('CSV Files', '*.csv')]
     )
-    root.destroy()
-    if not validation_files:
-        print('No validation files selected. Exiting.')
+    if not val_files:
+        print('No validation files selected. Exiting...')
         return
-    validation_datasets = [
-        InputSequenceDataset(file, configuration.get('sequence_length', 60), whitelist)
-        for file in validation_files
-    ]
-    validation_dataset = torch.utils.data.ConcatDataset(validation_datasets)
-    training_dataloader = torch.utils.data.DataLoader(
-        training_dataset,
-        pin_memory=True,
-        batch_size=configuration.get('batch_size', 32),
-        shuffle=True
-    )
-    validation_dataloader = torch.utils.data.DataLoader(
-        validation_dataset,
-        pin_memory=True,
-        batch_size=configuration.get('batch_size', 32),
-        shuffle=False
-    )
+    
+    train_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in train_files]
+    val_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in val_files]
+
+    if model_type == 'supervised':
+        cheat_train_files = tkinter.filedialog.askopenfilenames(
+            title='Select cheat training files',
+            filetypes=[('CSV Files', '*.csv')]
+        )
+        if not cheat_train_files:
+            print('No files selected. Exiting...')
+            return
+        cheat_val_files = tkinter.filedialog.askopenfilenames(
+            title='Select cheat validation files',
+            filetypes=[('CSV Files', '*.csv')]
+        )
+        if not cheat_val_files:
+            print('No files selected. Exiting...')
+            return
+        train_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_train_files]
+        val_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_val_files]
+
+    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+    val_dataset = torch.utils.data.ConcatDataset(val_datasets)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     class ConsecutivePrunedTrialsCallback:
         def __init__(self, patience=10):
             self.patience = patience
             self.consecutive_pruned = 0
+
         def __call__(self, study: optuna.Study, trial: optuna.Trial):
             if trial.state == optuna.trial.TrialState.PRUNED:
                 self.consecutive_pruned += 1
             else:
                 self.consecutive_pruned = 0
             if self.consecutive_pruned >= self.patience:
-                print(f"Stopping study: {self.consecutive_pruned} consecutive pruned trials.")
+                print(f'Stopping study: {self.consecutive_pruned} consecutive pruned trials.')
                 study.stop()
-    input_dimension = len(whitelist)
-    logging.getLogger("lightning.pytorch").setLevel(logging.ERROR)
+
+    logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
     def objective(trial):
         trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
         trial_num_layers = trial.suggest_int('num_layers', 1, 3)
         trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
-        model_type = configuration.get('model_type', 'unsupervised')
+
         if model_type == 'unsupervised':
             model = UnsupervisedModel(
-                input_dimension=input_dimension, 
-                hidden_dimension=trial_hidden_dim, 
+                input_dimension=len(whitelist),
+                hidden_dimension=trial_hidden_dim,
                 num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 60), 
+                sequence_length=sequence_length,
                 learning_rate=trial_learning_rate
             )
-        elif model_type == 'supervised':
+        else:
             model = SupervisedModel(
-                input_dimension=input_dimension, 
-                hidden_dimension=trial_hidden_dim, 
+                input_dimension=len(whitelist),
+                hidden_dimension=trial_hidden_dim,
                 num_layers=trial_num_layers,
-                sequence_length=configuration.get('sequence_length', 60), 
+                sequence_length=sequence_length,
                 learning_rate=trial_learning_rate
             )
+
         model.trial = trial
-        prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor="val_loss")
+        prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor='val_loss')
         trainer = lightning.Trainer(
             max_epochs=10,
             precision='16-mixed',
@@ -401,7 +371,8 @@ def train_model(configuration):
             enable_progress_bar=False,
             enable_model_summary=False
         )
-        trainer.fit(model, training_dataloader, validation_dataloader)
+        trainer.fit(model, train_loader, val_loader)
+
         val_loss = trainer.callback_metrics.get('val_loss')
         if val_loss is None:
             raise ValueError('Validation loss not found!')
@@ -410,51 +381,46 @@ def train_model(configuration):
     study = optuna.create_study(direction='minimize')
     consecutive_prune_callback = ConsecutivePrunedTrialsCallback(configuration.get('tuning_patience', 10))
     study.optimize(
-        objective, 
-        n_trials=1000, 
-        callbacks=[consecutive_prune_callback], 
-        gc_after_trial=True, 
+        objective,
+        n_trials=1000,
+        callbacks=[consecutive_prune_callback],
+        gc_after_trial=True,
         show_progress_bar=True
     )
 
-    print('Best trial:')
     best_trial = study.best_trial
-    print(best_trial.params)
+    print(f'Best trial:\n{best_trial.params}')
 
-    logging.getLogger("lightning.pytorch").setLevel(logging.INFO)
-    model_type = configuration.get('model_type', 'unsupervised')
+    logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
     if model_type == 'unsupervised':
         best_model = UnsupervisedModel(
-            input_dimension=input_dimension, 
-            hidden_dimension=best_trial.params['hidden_dim'], 
+            input_dimension=len(whitelist),
+            hidden_dimension=best_trial.params['hidden_dim'],
             num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 60), 
+            sequence_length=sequence_length,
             learning_rate=best_trial.params['learning_rate']
         )
-    elif model_type == 'supervised':
+    else:
         best_model = SupervisedModel(
-            input_dimension=input_dimension, 
-            hidden_dimension=best_trial.params['hidden_dim'], 
+            input_dimension=len(whitelist),
+            hidden_dimension=best_trial.params['hidden_dim'],
             num_layers=best_trial.params['num_layers'],
-            sequence_length=configuration.get('sequence_length', 60), 
+            sequence_length=sequence_length,
             learning_rate=best_trial.params['learning_rate']
         )
-
-    root = tkinter.Tk()
-    root.withdraw()
+    
     save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
-    root.destroy()
 
     early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
         monitor='val_loss',
         min_delta=-1e-8,
-        patience=configuration.get('training_patience', 10),
+        patience=5,
         mode='min'
     )
     early_save_callback = lightning.pytorch.callbacks.ModelCheckpoint(
         monitor='val_loss',
         dirpath=save_dir,
-        filename=f'{save_dir}/model_{time.strftime('%Y%m%d-%H%M%S')}',
+        filename=f'model_{time.strftime('%Y%m%d-%H%M%S')}',
         save_top_k=1
     )
     trainer = lightning.Trainer(
@@ -463,58 +429,66 @@ def train_model(configuration):
         precision='16-mixed',
         logger=False
     )
-    trainer.fit(best_model, training_dataloader, validation_dataloader)
-    print(f'Training complete. Model saved.')
+    trainer.fit(best_model, train_loader, val_loader)
+    print(f'Training complete. Model saved to: {save_dir}')
 
 # =============================================================================
 # Static Analysis Process
-# This function performs static analysis on test input data using a trained model checkpoint.
-# It loads the model, runs evaluation on the test data, computes relevant metrics, and saves a matplotlib graph to a file.
 # =============================================================================
-def run_static_analysis(configuration):
-    root = tkinter.Tk()
-    root.withdraw()
+def run_static_analysis(configuration, root):
+    model_type = configuration.get('model_type', 'unsupervised')
+    sequence_length = configuration.get('sequence_length', 60)
+    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
+    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
+    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
+    whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
+    
     file = tkinter.filedialog.askopenfilename(
         title='Select data file to analyze',
         filetypes=[('CSV Files', '*.csv')]
     )
-
     checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
-    root.destroy()
 
-    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['angle', 'magnitude'])
-    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
-    whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
-    test_dataset = InputSequenceDataset(file, configuration.get('sequence_length', 60), whitelist)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+    if model_type == 'unsupervised':
+        test_dataset = InputDataset(file, sequence_length, whitelist)
+    else:
+        test_dataset = InputDataset(file, sequence_length=sequence_length, input_whitelist=whitelist)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model_type = configuration.get('model_type', 'unsupervised')
     if model_type == 'unsupervised':
         model = UnsupervisedModel.load_from_checkpoint(checkpoint)
-    elif model_type == 'supervised':
+    else:
         model = SupervisedModel.load_from_checkpoint(checkpoint)
 
     trainer = lightning.Trainer(
         logger=False,
         enable_checkpointing=False,
     )
-    test_output = trainer.test(model, dataloaders=test_dataloader, ckpt_path=None)
+    test_output = trainer.test(model, dataloaders=test_loader, ckpt_path=None)
     indices = list(range(len(model.test_metric_history)))
     aggregated_metric = test_output[0]['agg_metric']
-    print_graph(indices, model_type, model.test_metric_history, aggregated_metric)
+
+    report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
+    matplotlib.pyplot.figure()
+    matplotlib.pyplot.plot(indices, model.test_metric_history)
+    matplotlib.pyplot.xlabel('Sequence Index')
+    if model_type == 'unsupervised':
+        matplotlib.pyplot.ylabel('Reconstruction Error')
+        matplotlib.pyplot.ylim(0, 0.5)
+    else:
+        matplotlib.pyplot.ylabel('Confidence)')
+        matplotlib.pyplot.ylim(0, 1)
+    matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
+    matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
+    print(f'Analysis complete. Graph saved to {report_dir}')
 
 # =============================================================================
 # Live Analysis Mode
-# This function polls the keyboard, mouse, and gamepad at a fixed rate and accumulates the rows.
-# Once a sequence of a configured length is collected, it is passed through a trained model to compute a metric.
-# The computed metric is printed and stored; optionally, a graph is saved at the end.
-# Polling continues until the configured kill key is pressed.
 # =============================================================================
-def run_live_analysis(configuration):
+def run_live_analysis(configuration, root):
     kill_key = configuration.get('kill_key', '\\')
     polling_rate = configuration.get('polling_rate', 60)
     sequence_length = configuration.get('sequence_length', 60)
@@ -522,121 +496,75 @@ def run_live_analysis(configuration):
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
 
-    root = tkinter.Tk()
-    root.withdraw()
     checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    root.destroy()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_type = configuration.get('model_type', 'unsupervised')
     if model_type == 'unsupervised':
         model = UnsupervisedModel.load_from_checkpoint(checkpoint)
-    elif model_type == 'supervised':
-        model = SupervisedModel.load_from_checkpoint(checkpoint)
     else:
-        print(f"Unrecognized model type '{model_type}'. Exiting.")
-        return
+        model = SupervisedModel.load_from_checkpoint(checkpoint)
     model.to(device)
     model.eval()
 
     smallest_screen_dimension = min(screen_width, screen_height)
     last_mouse_position = None
-    
     sequence = []
+
     print(f'Polling devices for live analysis (press {kill_key} to stop)...')
     while True:
         if keyboard.is_pressed(kill_key):
             break
+
         kb_row = poll_keyboard(keyboard_whitelist)
         m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
         gp_row = poll_gamepad(gamepad_whitelist)
         row = kb_row + m_row + gp_row
         sequence.append(row)
+
         if len(sequence) >= sequence_length:
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
             if model_type == 'unsupervised':
                 reconstruction = model(input_sequence)
-                loss_value = model.loss_function(reconstruction, input_sequence)
-                metric_value = loss_value.item()
-            elif model_type == 'supervised':
+                reconstruction_error = model.loss_function(reconstruction, input_sequence)
+                print(f'Reconstruction Error: {reconstruction_error.item()}')
+            else:
                 logits = model(input_sequence)
                 confidence = torch.sigmoid(logits).mean()
-                metric_value = confidence.item()
-            else:
-                metric_value = 0.0
-            model.test_metric_history.append(metric_value)
-            print(f'Live analysis metric: {metric_value:.6f}')
+                print(f'Confidence: {confidence.item()}')
         time.sleep(1.0 / polling_rate)
-
-    if len(model.test_metric_history) > 0:
-        aggregated_metric = sum(model.test_metric_history) / len(model.test_metric_history)
-    else:
-        aggregated_metric = 0.0
-    indices = list(range(len(model.test_metric_history)))
-    print_graph(indices, model_type, model.test_metric_history, aggregated_metric)
-
-# =============================================================================
-# Helper Function to Generate Graphs
-# This function identifies the relevant graph and saves it as a png.
-# =============================================================================
-def print_graph(indices, model_type, metric_history, aggregated_metric):
-    root = tkinter.Tk()
-    root.withdraw()
-    report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
-    root.destroy()
-    matplotlib.pyplot.figure()
-    matplotlib.pyplot.plot(indices, metric_history)
-    matplotlib.pyplot.xlabel('Sequence Index')
-    if model_type == 'unsupervised':
-        matplotlib.pyplot.ylabel('Reconstruction Error')
-        matplotlib.pyplot.ylim(0, 0.5)
-    elif model_type == 'supervised':
-        matplotlib.pyplot.ylabel('Confidence (Class 1)')
-        matplotlib.pyplot.ylim(0, 1)
-    matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
-    matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
-    print(f'Analysis complete. Graph saved.')
-
-# =============================================================================
-# Configuration Loading Process
-# This function loads the configuration from a JSON file.
-# =============================================================================
-def load_config(config_file):
-    with open(config_file, 'r') as file_handle:
-        configuration = json.load(file_handle)
-    return configuration
 
 # =============================================================================
 # Main Function
-# This main function loads configuration from a JSON config file (named 'config.json') and calls the appropriate function:
-#   - 'collect' to collect input data
-#   - 'train' to train a model
-#   - 'static' to perform static analysis on stored data
-#   - 'deploy' to perform live analysis using a trained model
 # =============================================================================
 def main():
     if torch.cuda.is_available():
         processor = torch.cuda.get_device_name(torch.cuda.current_device())
-        if "RTX" in processor or "Tesla" in processor:
+        if 'RTX' in processor or 'Tesla' in processor:
             torch.set_float32_matmul_precision('medium')
-            print(f"Tensor Cores detected on device: '{processor}'. Using medium precision for matmul.")
-    configuration = load_config('config.json')
+            print(f'Tensor Cores detected on device: "{processor}". Using medium precision for matmul.')
+
+    root = tkinter.Tk()
+    root.withdraw()
+    with open('config.json', 'r') as file_handle:
+        configuration = json.load(file_handle)
     mode = configuration.get('mode', 'none')
     if mode == 'collect':
-        collect_input_data(configuration)
+        collect_input_data(configuration, root)
     elif mode == 'train':
         train_model(configuration)
     elif mode == 'test':
-        run_static_analysis(configuration)
+        run_static_analysis(configuration, root)
     elif mode == 'deploy':
-        run_live_analysis(configuration)
+        run_live_analysis(configuration, root)
     else:
         print(f'Error: Invalid mode specified in configuration file: {mode}')
+    root.destroy()
 
 if __name__ == '__main__':
     main()

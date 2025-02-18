@@ -41,6 +41,11 @@ The mode is set by the `"mode"` key in `config.json`.
   - `"test"` — Static Analysis Mode  
   - `"deploy"` — Live Analysis Mode  
 
+- **kill_key**  
+  *Type:* String  
+  *Default:* `"\\"`  
+  *Description:* The keyboard key that, when pressed, stops data collection. (Ensure that this key is not included in any device’s whitelist.)
+
 - **model_type**  
   *Type:* String  
   *Default:* `"unsupervised"`  
@@ -48,11 +53,6 @@ The mode is set by the `"mode"` key in `config.json`.
   *Possible Values:*  
   - `"unsupervised"`  
   - `"supervised"`  
-
-- **kill_key**  
-  *Type:* String  
-  *Default:* `"\\"`  
-  *Description:* The keyboard key that, when pressed, stops data collection. (Ensure that this key is not included in any device’s whitelist.)
 
 - **polling_rate**  
   *Type:* Integer (Hz)  
