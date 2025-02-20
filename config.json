@@ -4,9 +4,9 @@
   "model_type": "unsupervised",
   "polling_rate": 60,
   "keyboard_whitelist": [],
-  "mouse_whitelist": ["angle", "magnitude"],
+  "mouse_whitelist": ["left", "angle", "magnitude"],
   "gamepad_whitelist": [],
-  "sequence_length": 60,
+  "sequence_length": 30,
   "tuning_patience": 10,
   "batch_size": 64
 }

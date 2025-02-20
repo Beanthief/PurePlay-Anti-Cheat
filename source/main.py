@@ -150,7 +150,7 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate):
+    def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate, optimizer_name):
         super().__init__()
         self.save_hyperparameters()
         self.input_dimension = input_dimension
@@ -158,27 +158,30 @@ class UnsupervisedModel(lightning.LightningModule):
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
-
+        self.optimizer_name = optimizer_name
         self.lstm_encoder = torch.nn.LSTM(
             input_size=input_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
-            batch_first=True,
-            dropout=0.1
+            batch_first=True
         )
         self.lstm_decoder = torch.nn.LSTM(
             input_size=hidden_dimension,
             hidden_size=hidden_dimension,
             num_layers=num_layers,
-            batch_first=True,
-            dropout=0.1
+            batch_first=True
         )
         self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
         self.loss_function = torch.nn.MSELoss()
         self.test_metric_history = []
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        if self.optimizer_name == 'Adam':
+            return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_name == 'RMSprop':
+            return torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_name == 'SGD':
+            return torch.optim.SGD(self.parameters(), lr=self.learning_rate)
 
     def forward(self, input_sequence):
         encoder_output, (hidden_state, cell_state) = self.lstm_encoder(input_sequence)
@@ -215,7 +218,7 @@ class UnsupervisedModel(lightning.LightningModule):
         return {'agg_metric': average_error}
 
 class SupervisedModel(lightning.LightningModule):
-    def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length):
+    def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length, optimizer_name):
         super().__init__()
         self.save_hyperparameters()
         self.input_dimension = input_dimension
@@ -223,6 +226,7 @@ class SupervisedModel(lightning.LightningModule):
         self.num_layers = num_layers
         self.sequence_length = sequence_length
         self.learning_rate = learning_rate
+        self.optimizer_name = optimizer_name
 
         self.lstm = torch.nn.LSTM(
             input_size=input_dimension,
@@ -235,7 +239,12 @@ class SupervisedModel(lightning.LightningModule):
         self.test_metric_history = []
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        if self.optimizer_name == 'Adam':
+            return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_name == 'RMSprop':
+            return torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
+        elif self.optimizer_name == 'SGD':
+            return torch.optim.SGD(self.parameters(), lr=self.learning_rate)
 
     def forward(self, input_sequence):
         lstm_output, _ = self.lstm(input_sequence)
@@ -339,9 +348,10 @@ def train_model(configuration):
 
     logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
     def objective(trial):
-        trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=8)
-        trial_num_layers = trial.suggest_int('num_layers', 1, 3)
+        trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 256, step=16)
+        trial_num_layers = trial.suggest_int('num_layers', 1, 4)
         trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
+        trial_optimizer = trial.suggest_categorical('optimizer_name', ['Adam', 'RMSprop', 'SGD'])
 
         if model_type == 'unsupervised':
             model = UnsupervisedModel(
@@ -349,7 +359,8 @@ def train_model(configuration):
                 hidden_dimension=trial_hidden_dim,
                 num_layers=trial_num_layers,
                 sequence_length=sequence_length,
-                learning_rate=trial_learning_rate
+                learning_rate=trial_learning_rate,
+                optimizer_name=trial_optimizer
             )
         else:
             model = SupervisedModel(
@@ -357,7 +368,8 @@ def train_model(configuration):
                 hidden_dimension=trial_hidden_dim,
                 num_layers=trial_num_layers,
                 sequence_length=sequence_length,
-                learning_rate=trial_learning_rate
+                learning_rate=trial_learning_rate,
+                optimizer_name=trial_optimizer
             )
 
         model.trial = trial
@@ -398,7 +410,8 @@ def train_model(configuration):
             hidden_dimension=best_trial.params['hidden_dim'],
             num_layers=best_trial.params['num_layers'],
             sequence_length=sequence_length,
-            learning_rate=best_trial.params['learning_rate']
+            learning_rate=best_trial.params['learning_rate'],
+            optimizer_name=best_trial.params['optimizer_name']
         )
     else:
         best_model = SupervisedModel(
@@ -406,7 +419,8 @@ def train_model(configuration):
             hidden_dimension=best_trial.params['hidden_dim'],
             num_layers=best_trial.params['num_layers'],
             sequence_length=sequence_length,
-            learning_rate=best_trial.params['learning_rate']
+            learning_rate=best_trial.params['learning_rate'],
+            optimizer_name=best_trial.params['optimizer_name']
         )
     
     save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
@@ -477,7 +491,7 @@ def run_static_analysis(configuration, root):
     matplotlib.pyplot.xlabel('Sequence Index')
     if model_type == 'unsupervised':
         matplotlib.pyplot.ylabel('Reconstruction Error')
-        matplotlib.pyplot.ylim(0, 0.5)
+        matplotlib.pyplot.ylim(0, 0.25)
     else:
         matplotlib.pyplot.ylabel('Confidence)')
         matplotlib.pyplot.ylim(0, 1)
