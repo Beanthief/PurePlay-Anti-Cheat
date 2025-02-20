@@ -1,12 +1,12 @@
 {
-  "mode": "test",
+  "mode": "collect",
   "kill_key": "\\",
   "model_type": "unsupervised",
   "polling_rate": 60,
   "keyboard_whitelist": [],
-  "mouse_whitelist": ["left", "angle", "magnitude"],
+  "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
-  "sequence_length": 30,
+  "sequence_length": 60,
   "tuning_patience": 10,
   "batch_size": 64
 }

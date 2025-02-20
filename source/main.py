@@ -150,62 +150,62 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, input_dimension, hidden_dimension, num_layers, sequence_length, learning_rate, optimizer_name):
+    def __init__(self, num_features, layers, sequence_length):
         super().__init__()
         self.save_hyperparameters()
-        self.input_dimension = input_dimension
-        self.hidden_dimension = hidden_dimension
-        self.num_layers = num_layers
         self.sequence_length = sequence_length
-        self.learning_rate = learning_rate
-        self.optimizer_name = optimizer_name
-        self.lstm_encoder = torch.nn.LSTM(
-            input_size=input_dimension,
-            hidden_size=hidden_dimension,
-            num_layers=num_layers,
-            batch_first=True
-        )
-        self.lstm_decoder = torch.nn.LSTM(
-            input_size=hidden_dimension,
-            hidden_size=hidden_dimension,
-            num_layers=num_layers,
-            batch_first=True
-        )
-        self.output_layer = torch.nn.Linear(hidden_dimension, input_dimension)
+
+        self.encoders = torch.nn.ModuleList()
+        dec_dim = num_features
+        for enc_dim in layers:
+            encoder = torch.nn.LSTM(
+                input_size=dec_dim,
+                hidden_size=enc_dim,
+                batch_first=True
+            )
+            self.encoders.append(encoder)
+            dec_dim = enc_dim
+
+        self.decoders = torch.nn.ModuleList()
+        last_enc_dim = layers[-1]
+        for dec_dim in reversed(layers):
+            decoder = torch.nn.LSTM(
+                input_size=last_enc_dim,
+                hidden_size=dec_dim,
+                batch_first=True
+            )
+            self.decoders.append(decoder)
+            last_enc_dim = dec_dim
+        self.output_layer = torch.nn.Linear(layers[0], num_features)
+
         self.loss_function = torch.nn.MSELoss()
         self.test_metric_history = []
 
-    def configure_optimizers(self):
-        if self.optimizer_name == 'Adam':
-            return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_name == 'RMSprop':
-            return torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_name == 'SGD':
-            return torch.optim.SGD(self.parameters(), lr=self.learning_rate)
-
     def forward(self, input_sequence):
-        encoder_output, (hidden_state, cell_state) = self.lstm_encoder(input_sequence)
-        repeated_hidden = hidden_state[-1].unsqueeze(1).repeat(1, self.sequence_length, 1)
-        decoder_output, _ = self.lstm_decoder(repeated_hidden, (hidden_state, cell_state))
-        reconstruction = self.output_layer(decoder_output)
+        output = input_sequence
+        for enc_lstm in self.encoders:
+            output, (hidden_state, cell_state) = enc_lstm(output)
+        for dec_lstm in self.decoders:
+            output, (hidden_state, cell_state) = dec_lstm(output)
+        reconstruction = self.output_layer(output)
         return reconstruction
 
     def training_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, _ = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = self.loss_function(reconstruction, inputs)
         self.log('train_loss', reconstruction_error, prog_bar=True, on_epoch=True)
         return reconstruction_error
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, _ = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = self.loss_function(reconstruction, inputs)
         self.log('val_loss', reconstruction_error, prog_bar=True, on_epoch=True)
         return reconstruction_error
 
     def test_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, _ = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = self.loss_function(reconstruction, inputs)
         self.test_metric_history.append(reconstruction_error.detach().cpu())
@@ -217,41 +217,51 @@ class UnsupervisedModel(lightning.LightningModule):
         self.log('agg_metric', average_error)
         return {'agg_metric': average_error}
 
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.1,
+            patience=3,
+            min_lr=0.00001
+        )
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor': 'val_loss'
+            }
+        }
+
 class SupervisedModel(lightning.LightningModule):
-    def __init__(self, input_dimension, hidden_dimension, learning_rate, num_layers, sequence_length, optimizer_name):
+    def __init__(self, num_features, layers, sequence_length):
         super().__init__()
         self.save_hyperparameters()
-        self.input_dimension = input_dimension
-        self.hidden_dimension = hidden_dimension
-        self.num_layers = num_layers
         self.sequence_length = sequence_length
-        self.learning_rate = learning_rate
-        self.optimizer_name = optimizer_name
 
-        self.lstm = torch.nn.LSTM(
-            input_size=input_dimension,
-            hidden_size=hidden_dimension,
-            num_layers=num_layers,
-            batch_first=True
-        )
-        self.supervised_layer = torch.nn.Linear(hidden_dimension, 1)
+        self.layers = torch.nn.ModuleList()
+        input_dim = num_features
+        for hidden_dim in layers:
+            layer = torch.nn.LSTM(
+                input_size=input_dim,
+                hidden_size=hidden_dim,
+                batch_first=True
+            )
+            self.layers.append(layer)
+        self.classifier_layer = torch.nn.Linear(layers[-1], 1)
+
         self.loss_function = torch.nn.BCEWithLogitsLoss()
         self.test_metric_history = []
 
-    def configure_optimizers(self):
-        if self.optimizer_name == 'Adam':
-            return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_name == 'RMSprop':
-            return torch.optim.RMSprop(self.parameters(), lr=self.learning_rate)
-        elif self.optimizer_name == 'SGD':
-            return torch.optim.SGD(self.parameters(), lr=self.learning_rate)
-
     def forward(self, input_sequence):
-        lstm_output, _ = self.lstm(input_sequence)
-        last_output = lstm_output[:, -1, :]
-        classification_output = self.supervised_layer(last_output).squeeze(1)
+        output = input_sequence
+        for lstm_layer in self.layers:
+            output, (hidden_state, cell_state) = lstm_layer(output)
+        last_output = output[:, -1, :]
+        classification_output = self.classifier_layer(last_output).squeeze(1)
         return classification_output
-
+    
     def training_step(self, batch, batch_idx):
         inputs, labels = batch
         output = self.forward(inputs)
@@ -278,6 +288,23 @@ class SupervisedModel(lightning.LightningModule):
         average_confidence = torch.stack(self.test_metric_history).mean()
         self.log('agg_metric', average_confidence)
         return {'agg_metric': average_confidence}
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.1,
+            patience=3,
+            min_lr=0.00001
+        )
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor': 'val_loss'
+            }
+        }
 
 # =============================================================================
 # Training Process
@@ -348,28 +375,23 @@ def train_model(configuration):
 
     logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
     def objective(trial):
-        trial_hidden_dim = trial.suggest_int('hidden_dim', 16, 256, step=16)
-        trial_num_layers = trial.suggest_int('num_layers', 1, 4)
-        trial_learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True)
-        trial_optimizer = trial.suggest_categorical('optimizer_name', ['Adam', 'RMSprop', 'SGD'])
+        trial_num_layers = trial.suggest_int('num_layers', 1, 3)
+        trial_layers = []
+        for i in range(trial_num_layers):
+            layer = trial.suggest_int(f'layer{i}_dim', 2, 128, step=2)
+            trial_layers.append(layer)
 
         if model_type == 'unsupervised':
             model = UnsupervisedModel(
-                input_dimension=len(whitelist),
-                hidden_dimension=trial_hidden_dim,
-                num_layers=trial_num_layers,
-                sequence_length=sequence_length,
-                learning_rate=trial_learning_rate,
-                optimizer_name=trial_optimizer
+                num_features=len(whitelist),
+                layers=trial_layers,
+                sequence_length=sequence_length
             )
         else:
             model = SupervisedModel(
-                input_dimension=len(whitelist),
-                hidden_dimension=trial_hidden_dim,
-                num_layers=trial_num_layers,
-                sequence_length=sequence_length,
-                learning_rate=trial_learning_rate,
-                optimizer_name=trial_optimizer
+                num_features=len(whitelist),
+                layers=trial_layers,
+                sequence_length=sequence_length
             )
 
         model.trial = trial
@@ -401,26 +423,22 @@ def train_model(configuration):
     )
 
     best_trial = study.best_trial
-    print(f'Best trial:\n{best_trial.params}')
+    best_layers = []
+    for i in range(best_trial.params['num_layers']):
+        best_layers.append(best_trial.params[f'layer{i}_dim'])
 
     logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
     if model_type == 'unsupervised':
         best_model = UnsupervisedModel(
-            input_dimension=len(whitelist),
-            hidden_dimension=best_trial.params['hidden_dim'],
-            num_layers=best_trial.params['num_layers'],
-            sequence_length=sequence_length,
-            learning_rate=best_trial.params['learning_rate'],
-            optimizer_name=best_trial.params['optimizer_name']
+            num_features=len(whitelist),
+            layers=best_layers,
+            sequence_length=sequence_length
         )
     else:
         best_model = SupervisedModel(
-            input_dimension=len(whitelist),
-            hidden_dimension=best_trial.params['hidden_dim'],
-            num_layers=best_trial.params['num_layers'],
-            sequence_length=sequence_length,
-            learning_rate=best_trial.params['learning_rate'],
-            optimizer_name=best_trial.params['optimizer_name']
+            num_features=len(whitelist),
+            layers=best_layers,
+            sequence_length=sequence_length
         )
     
     save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
