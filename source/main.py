@@ -150,7 +150,7 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length):
+    def __init__(self, num_features, layers, sequence_length, graph_learning_curve=True):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
@@ -179,7 +179,16 @@ class UnsupervisedModel(lightning.LightningModule):
         self.output_layer = torch.nn.Linear(layers[0], num_features)
 
         self.loss_function = torch.nn.MSELoss()
+        self.train_metric_history = []
+        self.val_metric_history = []
         self.test_metric_history = []
+        self.epoch_indices = []
+        self.epoch_counter = 0
+        
+        self.graph_learning_curve = graph_learning_curve
+        if self.graph_learning_curve:
+            matplotlib.pyplot.ion()
+            self.figure, self.axes = matplotlib.pyplot.subplots()
 
     def forward(self, input_sequence):
         output = input_sequence
@@ -193,21 +202,46 @@ class UnsupervisedModel(lightning.LightningModule):
     def training_step(self, batch, batch_idx):
         inputs, _ = batch
         reconstruction = self.forward(inputs)
-        reconstruction_error = self.loss_function(reconstruction, inputs)
-        self.log('train_loss', reconstruction_error, prog_bar=True, on_epoch=True)
+        reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
+        self.train_metric_history.append(reconstruction_error.detach().cpu())
         return reconstruction_error
 
     def validation_step(self, batch, batch_idx):
         inputs, _ = batch
         reconstruction = self.forward(inputs)
-        reconstruction_error = self.loss_function(reconstruction, inputs)
+        reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
+        self.val_metric_history.append(reconstruction_error.detach().cpu())
         self.log('val_loss', reconstruction_error, prog_bar=True, on_epoch=True)
         return reconstruction_error
-
+    
+    def on_validation_epoch_end(self):
+        if self.graph_learning_curve:
+            avg_train_loss = torch.stack(self.train_metric_history).mean().item() if self.train_metric_history else None
+            avg_val_loss = torch.stack(self.val_metric_history).mean().item() if self.val_metric_history else None
+            if avg_train_loss is None or avg_val_loss is None:
+                return
+            self.epoch_indices.append(self.epoch_counter)
+            self.epoch_counter += 1
+            if not hasattr(self, 'avg_train_losses'):
+                self.avg_train_losses = []
+                self.avg_val_losses = []
+            self.avg_train_losses.append(avg_train_loss)
+            self.avg_val_losses.append(avg_val_loss)
+            self.axes.clear()
+            self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
+            self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
+            self.axes.set_xlabel('Epoch')
+            self.axes.set_ylabel('RMSE')
+            self.axes.legend()
+            self.figure.canvas.draw()
+            matplotlib.pyplot.pause(0.001)
+            self.train_metric_history = []
+            self.val_metric_history = []
+        
     def test_step(self, batch, batch_idx):
         inputs, _ = batch
         reconstruction = self.forward(inputs)
-        reconstruction_error = self.loss_function(reconstruction, inputs)
+        reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
         self.test_metric_history.append(reconstruction_error.detach().cpu())
         self.log('metric', reconstruction_error)
         return {'metric': reconstruction_error}
@@ -218,12 +252,12 @@ class UnsupervisedModel(lightning.LightningModule):
         return {'agg_metric': average_error}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode='min',
             factor=0.1,
-            patience=3,
+            patience=5,
             min_lr=0.00001
         )
         return {
@@ -290,7 +324,7 @@ class SupervisedModel(lightning.LightningModule):
         return {'agg_metric': average_confidence}
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode='min',
@@ -311,163 +345,174 @@ class SupervisedModel(lightning.LightningModule):
 # =============================================================================
 def train_model(configuration):
     model_type = configuration.get('model_type', 'unsupervised')
+    model_structure = configuration.get('model_structure', [])
     sequence_length = configuration.get('sequence_length', 60)
+    tuning_patience = configuration.get('tuning_patience', 10)
     batch_size = configuration.get('batch_size', 32)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
 
-    train_files = tkinter.filedialog.askopenfilenames(
-        title='Select non-cheat training files',
-        filetypes=[('CSV Files', '*.csv')]
-    )
-    if not train_files:
-        print('No training files selected. Exiting...')
-        return
-    val_files = tkinter.filedialog.askopenfilenames(
-        title='Select non-cheat validation files',
-        filetypes=[('CSV Files', '*.csv')]
-    )
-    if not val_files:
-        print('No validation files selected. Exiting...')
-        return
-    
-    train_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in train_files]
-    val_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in val_files]
-
-    if model_type == 'supervised':
-        cheat_train_files = tkinter.filedialog.askopenfilenames(
-            title='Select cheat training files',
+    # Preprocessing
+    if whitelist:
+        train_files = tkinter.filedialog.askopenfilenames(
+            title='Select non-cheat training files',
             filetypes=[('CSV Files', '*.csv')]
         )
-        if not cheat_train_files:
-            print('No files selected. Exiting...')
+        if not train_files:
+            print('No training files selected. Exiting...')
             return
-        cheat_val_files = tkinter.filedialog.askopenfilenames(
-            title='Select cheat validation files',
+        val_files = tkinter.filedialog.askopenfilenames(
+            title='Select non-cheat validation files',
             filetypes=[('CSV Files', '*.csv')]
         )
-        if not cheat_val_files:
-            print('No files selected. Exiting...')
+        if not val_files:
+            print('No validation files selected. Exiting...')
             return
-        train_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_train_files]
-        val_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_val_files]
+        
+        train_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in train_files]
+        val_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in val_files]
 
-    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
-    val_dataset = torch.utils.data.ConcatDataset(val_datasets)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        if model_type == 'supervised':
+            cheat_train_files = tkinter.filedialog.askopenfilenames(
+                title='Select cheat training files',
+                filetypes=[('CSV Files', '*.csv')]
+            )
+            if not cheat_train_files:
+                print('No files selected. Exiting...')
+                return
+            cheat_val_files = tkinter.filedialog.askopenfilenames(
+                title='Select cheat validation files',
+                filetypes=[('CSV Files', '*.csv')]
+            )
+            if not cheat_val_files:
+                print('No files selected. Exiting...')
+                return
+            train_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_train_files]
+            val_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_val_files]
 
-    class ConsecutivePrunedTrialsCallback:
-        def __init__(self, patience=10):
-            self.patience = patience
-            self.consecutive_pruned = 0
+        train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+        val_dataset = torch.utils.data.ConcatDataset(val_datasets)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-        def __call__(self, study: optuna.Study, trial: optuna.Trial):
-            if trial.state == optuna.trial.TrialState.PRUNED:
-                self.consecutive_pruned += 1
-            else:
+    # Tuning
+    if not model_structure:
+        class ConsecutivePrunedTrialsCallback:
+            def __init__(self, patience):
+                self.patience = patience
                 self.consecutive_pruned = 0
-            if self.consecutive_pruned >= self.patience:
-                print(f'Stopping study: {self.consecutive_pruned} consecutive pruned trials.')
-                study.stop()
 
-    logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
-    def objective(trial):
-        trial_num_layers = trial.suggest_int('num_layers', 1, 3)
-        trial_layers = []
-        for i in range(trial_num_layers):
-            layer = trial.suggest_int(f'layer{i}_dim', 2, 128, step=2)
-            trial_layers.append(layer)
+            def __call__(self, study: optuna.Study, trial: optuna.Trial):
+                if trial.state == optuna.trial.TrialState.PRUNED:
+                    self.consecutive_pruned += 1
+                else:
+                    self.consecutive_pruned = 0
+                if self.consecutive_pruned >= self.patience:
+                    print(f'Stopping study: {self.consecutive_pruned} consecutive pruned trials.')
+                    study.stop()
 
+        logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
+
+        def objective(trial):
+            trial_num_layers = trial.suggest_int('num_layers', 1, 3)
+            trial_layers = []
+            for i in range(trial_num_layers):
+                layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
+                trial_layers.append(layer)
+
+            if model_type == 'unsupervised':
+                model = UnsupervisedModel(
+                    num_features=len(whitelist),
+                    layers=trial_layers,
+                    sequence_length=sequence_length,
+                    graph_learning_curve=False
+                )
+            else:
+                model = SupervisedModel(
+                    num_features=len(whitelist),
+                    layers=trial_layers,
+                    sequence_length=sequence_length,
+                    graph_learning_curve=False
+                )
+
+            model.trial = trial
+            prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor='val_loss')
+            trainer = lightning.Trainer(
+                max_epochs=25,
+                precision='16-mixed',
+                callbacks=[prune_callback],
+                logger=False,
+                enable_checkpointing=False,
+                enable_progress_bar=False,
+                enable_model_summary=False
+            )
+            trainer.fit(model, train_loader, val_loader)
+
+            val_loss = trainer.callback_metrics.get('val_loss')
+            if val_loss is None:
+                raise ValueError('Validation loss not found!')
+            return val_loss.item()
+        
+        study = optuna.create_study(direction='minimize')
+        consecutive_prune_callback = ConsecutivePrunedTrialsCallback(tuning_patience)
+        study.optimize(
+            objective,
+            n_trials=1000,
+            callbacks=[consecutive_prune_callback],
+            gc_after_trial=True
+        )
+
+        best_trial = study.best_trial
+        best_structure = []
+        for i in range(best_trial.params['num_layers']):
+            best_structure.append(best_trial.params[f'layer{i}_dim'])
+        model_structure = best_structure
+
+    # Training
+    if model_structure:
+        logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
         if model_type == 'unsupervised':
-            model = UnsupervisedModel(
+            best_model = UnsupervisedModel(
                 num_features=len(whitelist),
-                layers=trial_layers,
+                layers=model_structure,
                 sequence_length=sequence_length
             )
         else:
-            model = SupervisedModel(
+            best_model = SupervisedModel(
                 num_features=len(whitelist),
-                layers=trial_layers,
+                layers=model_structure,
                 sequence_length=sequence_length
             )
+        
+        save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
 
-        model.trial = trial
-        prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor='val_loss')
+        early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
+            monitor='val_loss',
+            min_delta=1e-5,
+            patience=10,
+            mode='min'
+        )
+        early_save_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+            monitor='val_loss',
+            dirpath=save_dir,
+            filename=f'model_{time.strftime('%Y%m%d-%H%M%S')}',
+            save_top_k=1
+        )
         trainer = lightning.Trainer(
-            max_epochs=10,
+            max_epochs=1000,
+            callbacks=[early_stop_callback, early_save_callback],
             precision='16-mixed',
-            callbacks=[prune_callback],
-            logger=False,
-            enable_checkpointing=False,
-            enable_progress_bar=False,
-            enable_model_summary=False
+            logger=False
         )
-        trainer.fit(model, train_loader, val_loader)
-
-        val_loss = trainer.callback_metrics.get('val_loss')
-        if val_loss is None:
-            raise ValueError('Validation loss not found!')
-        return val_loss.item()
-
-    study = optuna.create_study(direction='minimize')
-    consecutive_prune_callback = ConsecutivePrunedTrialsCallback(configuration.get('tuning_patience', 10))
-    study.optimize(
-        objective,
-        n_trials=1000,
-        callbacks=[consecutive_prune_callback],
-        gc_after_trial=True,
-        show_progress_bar=True
-    )
-
-    best_trial = study.best_trial
-    best_layers = []
-    for i in range(best_trial.params['num_layers']):
-        best_layers.append(best_trial.params[f'layer{i}_dim'])
-
-    logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
-    if model_type == 'unsupervised':
-        best_model = UnsupervisedModel(
-            num_features=len(whitelist),
-            layers=best_layers,
-            sequence_length=sequence_length
-        )
-    else:
-        best_model = SupervisedModel(
-            num_features=len(whitelist),
-            layers=best_layers,
-            sequence_length=sequence_length
-        )
-    
-    save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
-
-    early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
-        monitor='val_loss',
-        min_delta=-1e-8,
-        patience=5,
-        mode='min'
-    )
-    early_save_callback = lightning.pytorch.callbacks.ModelCheckpoint(
-        monitor='val_loss',
-        dirpath=save_dir,
-        filename=f'model_{time.strftime('%Y%m%d-%H%M%S')}',
-        save_top_k=1
-    )
-    trainer = lightning.Trainer(
-        max_epochs=1000,
-        callbacks=[early_stop_callback, early_save_callback],
-        precision='16-mixed',
-        logger=False
-    )
-    trainer.fit(best_model, train_loader, val_loader)
-    print(f'Training complete. Model saved to: {save_dir}')
+        trainer.fit(best_model, train_loader, val_loader)
+        print(f'Training complete. Model saved to: {save_dir}')
 
 # =============================================================================
 # Static Analysis Process
 # =============================================================================
-def run_static_analysis(configuration, root):
+def run_static_analysis(configuration):
     model_type = configuration.get('model_type', 'unsupervised')
     sequence_length = configuration.get('sequence_length', 60)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
@@ -484,38 +529,44 @@ def run_static_analysis(configuration, root):
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
 
-    if model_type == 'unsupervised':
-        test_dataset = InputDataset(file, sequence_length, whitelist)
-    else:
-        test_dataset = InputDataset(file, sequence_length=sequence_length, input_whitelist=whitelist)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+    # Analyze data
+    if file and checkpoint:
+        if model_type == 'unsupervised':
+            test_dataset = InputDataset(file, sequence_length, whitelist)
+        else:
+            test_dataset = InputDataset(file, sequence_length=sequence_length, input_whitelist=whitelist)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    if model_type == 'unsupervised':
-        model = UnsupervisedModel.load_from_checkpoint(checkpoint)
-    else:
-        model = SupervisedModel.load_from_checkpoint(checkpoint)
+        if model_type == 'unsupervised':
+            model = UnsupervisedModel.load_from_checkpoint(checkpoint)
+        else:
+            model = SupervisedModel.load_from_checkpoint(checkpoint)
 
-    trainer = lightning.Trainer(
-        logger=False,
-        enable_checkpointing=False,
-    )
-    test_output = trainer.test(model, dataloaders=test_loader, ckpt_path=None)
-    indices = list(range(len(model.test_metric_history)))
-    aggregated_metric = test_output[0]['agg_metric']
-
-    report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
-    matplotlib.pyplot.figure()
-    matplotlib.pyplot.plot(indices, model.test_metric_history)
-    matplotlib.pyplot.xlabel('Sequence Index')
-    if model_type == 'unsupervised':
-        matplotlib.pyplot.ylabel('Reconstruction Error')
-        matplotlib.pyplot.ylim(0, 0.25)
+        trainer = lightning.Trainer(
+            logger=False,
+            enable_checkpointing=False,
+        )
+        test_output = trainer.test(model, dataloaders=test_loader, ckpt_path=None)
+        indices = list(range(len(model.test_metric_history)))
+        aggregated_metric = test_output[0]['agg_metric']
     else:
-        matplotlib.pyplot.ylabel('Confidence)')
-        matplotlib.pyplot.ylim(0, 1)
-    matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
-    matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
-    print(f'Analysis complete. Graph saved to {report_dir}')
+        print('Data or model not selected. Exiting.')
+
+    # Graph results
+    if model.test_metric_history:
+        report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
+        matplotlib.pyplot.figure()
+        matplotlib.pyplot.plot(indices, model.test_metric_history)
+        matplotlib.pyplot.xlabel('Sequence Index')
+        if model_type == 'unsupervised':
+            matplotlib.pyplot.ylabel('Reconstruction Error (RMSE)')
+        else:
+            matplotlib.pyplot.ylabel('Cheating Confidence')
+        matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
+        matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        print(f'Analysis complete. Graph saved to {report_dir}')
+    else:
+        print('No test metrics found. Exiting.')
 
 # =============================================================================
 # Live Analysis Mode
@@ -591,7 +642,7 @@ def main():
     elif mode == 'train':
         train_model(configuration)
     elif mode == 'test':
-        run_static_analysis(configuration, root)
+        run_static_analysis(configuration)
     elif mode == 'deploy':
         run_live_analysis(configuration, root)
     else:

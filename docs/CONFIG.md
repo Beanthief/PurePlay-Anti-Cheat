@@ -24,7 +24,7 @@ The system operates in one of four modes:
   Uses a pre-trained model to analyze a selected CSV file, computes relevant metrics (such as reconstruction error, classification confidence, or prediction loss), and generates a report graph.
 
 - **Live Analysis (`"deploy"`):**  
-  Continuously polls the input devices in real time, accumulates sequences, processes them using a pre-trained model, prints computed metrics, and produces a report graph at the end.
+  Continuously polls the input devices in real time, accumulates sequences, processes them using a pre-trained model, and prints a stream of metrics for external analysis.
 
 The mode is set by the `"mode"` key in `config.json`.
 
@@ -54,27 +54,32 @@ The mode is set by the `"mode"` key in `config.json`.
   - `"unsupervised"`  
   - `"supervised"`  
 
+- **model_structure**  
+  *Type:* List of neuron counts per layer
+  *Default:* `[]`  
+  *Description:* Allows the user to manually design the lstm layouts.
+
 - **polling_rate**  
   *Type:* Integer (Hz)  
   *Default:* `60`  
   *Description:* The frequency at which keyboard, mouse, and gamepad inputs are polled.
 
 - **keyboard_whitelist**  
-  *Type:* Array of Strings  
+  *Type:* List of Strings  
   *Default:* `["w", "a", "s", "d", "space", "ctrl"]`  
   *Description:* List of keyboard keys to capture during collection and live analysis.  
   *Possible Values:*  
     `a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, +, -, *, /, ., ,, <, >, ?, !, @, #, $, %, ^, &, *, (, ), _, =, {, }, [, ], |, \\, :, ;, , , ~, enter, esc, backspace, tab, space, caps lock, num lock, scroll lock, home, end, page up, page down, insert, delete, left, right, up, down, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, print screen, pause, break, windows, menu, right alt, ctrl, left shift, right shift, left windows, left alt, right windows, alt gr, windows, alt, shift, right ctrl, left ctrl`
 
 - **mouse_whitelist**  
-  *Type:* Array of Strings  
+  *Type:* List of Strings  
   *Default:* `["angle", "magnitude"]`  
   *Description:* List of mouse features to capture.  
   *Possible Values:*  
     `left, right, middle, x1, x2, angle, magnitude`  
 
 - **gamepad_whitelist**  
-  *Type:* Array of Strings  
+  *Type:* List of Strings  
   *Default:* `["LT", "RT", "LX", "LY", "RX", "RY"]`  
   *Description:* List of gamepad buttons/features to capture.  
   *Possible Values:*  
