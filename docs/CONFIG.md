@@ -43,68 +43,51 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **kill_key**  
   *Type:* String  
-  *Default:* `"\\"`  
-  *Description:* The keyboard key that, when pressed, stops data collection. (Ensure that this key is not included in any device’s whitelist.)
+  *Recommended:* `"\\"`  
+  *Description:* The keyboard key that, when pressed, stops data collection. For possible values, see `keyboard_whitelist`.
 
 - **model_type**  
   *Type:* String  
-  *Default:* `"unsupervised"`  
+  *Recommended:* `"unsupervised"`  
   *Description:* Pick supervised if you have a specific cheat you want to catch or lots of positive cheating data and legitimate player data. Otherwise, pick unsupervised and only train on normal player data.  
   *Possible Values:*  
   - `"unsupervised"`  
   - `"supervised"`  
 
-- **model_structure**  
-  *Type:* List of neuron counts per layer
-  *Default:* `[]`  
-  *Description:* Allows the user to manually design the lstm layouts.
-
-- **polling_rate**  
-  *Type:* Integer (Hz)  
-  *Default:* `120`  
-  *Description:* The frequency at which keyboard, mouse, and gamepad inputs are polled.
-
 - **keyboard_whitelist**  
   *Type:* List of Strings  
-  *Default:* `["w", "a", "s", "d", "space", "ctrl"]`  
+  *Recommended:* `["w", "a", "s", "d", "space", "ctrl"]`  
   *Description:* List of keyboard keys to capture during collection and live analysis.  
   *Possible Values:*  
     `a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, +, -, *, /, ., ,, <, >, ?, !, @, #, $, %, ^, &, *, (, ), _, =, {, }, [, ], |, \\, :, ;, , , ~, enter, esc, backspace, tab, space, caps lock, num lock, scroll lock, home, end, page up, page down, insert, delete, left, right, up, down, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, print screen, pause, break, windows, menu, right alt, ctrl, left shift, right shift, left windows, left alt, right windows, alt gr, windows, alt, shift, right ctrl, left ctrl`
 
 - **mouse_whitelist**  
   *Type:* List of Strings  
-  *Default:* `["angle", "magnitude"]`  
+  *Recommended:* `["angle", "magnitude"]`  
   *Description:* List of mouse features to capture.  
   *Possible Values:*  
     `left, right, middle, x1, x2, angle, magnitude`  
 
 - **gamepad_whitelist**  
   *Type:* List of Strings  
-  *Default:* `["LT", "RT", "LX", "LY", "RX", "RY"]`  
+  *Recommended:* `["LT", "RT", "LX", "LY", "RX", "RY"]`  
   *Description:* List of gamepad buttons/features to capture.  
   *Possible Values:*  
     `DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, START, BACK, LEFT_THUMB, RIGHT_THUMB, LEFT_SHOULDER, RIGHT_SHOULDER, A, B, X, Y, LT, RT, LX, LY, RX, RY`
 
+- **polling_rate**  
+  *Type:* Integer (Hz)  
+  *Recommended:* `120`  
+  *Description:* The frequency at which keyboard, mouse, and gamepad inputs are polled.
+
 - **sequence_length**  
   *Type:* Integer  
-  *Default:* `60`  
+  *Recommended:* `60`  
   *Description:* The number of polls per input pattern you want to recognize.
-
-- **tuning_patience**  
-  *Type:* Integer  
-  *Default:* `10`  
-  *Description:* The number of consecutive pruned tuning trials before early stopping.  
-  *Recommendation:* Increase as you decrease sequence length.
-
-- **training_patience**  
-  *Type:* Integer  
-  *Default:* `10`  
-  *Description:* The number of consecutive epochs in training before early stopping.  
-  *Recommendation:* Increase as you decrease sequence length.
 
 - **batch_size**  
   *Type:* Integer  
-  *Default:* `64`  
+  *Recommended:* `64`  
   *Description:* Number of sequences per training batch.
 
 ---

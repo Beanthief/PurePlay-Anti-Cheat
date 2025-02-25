@@ -37,19 +37,15 @@ def poll_mouse(mouse_whitelist, scale, last_position):
             row.append(1 if mouse.is_pressed(button=feature) else 0)
     if 'angle' in mouse_whitelist or 'magnitude' in mouse_whitelist:
         current_position = mouse.get_position()
-        if last_position is not None:
-            delta_x = current_position[0] - last_position[0]
-            delta_y = last_position[1] - current_position[1]
-            normalized_delta_x = delta_x / scale
-            normalized_delta_y = delta_y / scale
-            normalized_angle = math.atan2(normalized_delta_y, normalized_delta_x)
-            if normalized_angle < 0:
-                normalized_angle += 2 * math.pi
-            normalized_angle = normalized_angle / (2 * math.pi)
-            normalized_magnitude = math.hypot(normalized_delta_x, normalized_delta_y)
-        else:
-            normalized_angle = 0
-            normalized_magnitude = 0
+        delta_x = current_position[0] - last_position[0]
+        delta_y = last_position[1] - current_position[1]
+        normalized_delta_x = delta_x / scale
+        normalized_delta_y = delta_y / scale
+        normalized_angle = math.atan2(normalized_delta_y, normalized_delta_x)
+        if normalized_angle < 0:
+            normalized_angle += 2 * math.pi
+        normalized_angle = normalized_angle / (2 * math.pi)
+        normalized_magnitude = math.hypot(normalized_delta_x, normalized_delta_y)
         if 'angle' in mouse_whitelist:
             row.append(normalized_angle)
         if 'magnitude' in mouse_whitelist:
@@ -94,18 +90,18 @@ def poll_gamepad(gamepad_whitelist):
 # Collection Mode
 # =============================================================================
 def collect_input_data(configuration, root):
-    kill_key = configuration.get('kill_key', '\\')
-    polling_rate = configuration.get('polling_rate', 120)
-    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
-    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
+    kill_key = configuration['kill_key']
+    polling_rate = configuration['polling_rate']
+    keyboard_whitelist = configuration['keyboard_whitelist']
+    mouse_whitelist = configuration['mouse_whitelist']
+    gamepad_whitelist = configuration['gamepad_whitelist']
 
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     save_dir = tkinter.filedialog.askdirectory(title='Select data save folder')
 
     smallest_screen_dimension = min(screen_width, screen_height)
-    last_mouse_position = None
+    last_mouse_position = mouse.get_position()
 
     with open(f'{save_dir}/inputs_{time.strftime('%Y%m%d-%H%M%S')}.csv', mode='w', newline='') as file_handle:
         csv_writer = csv.writer(file_handle)
@@ -345,12 +341,12 @@ class SupervisedModel(lightning.LightningModule):
 # Training Process
 # =============================================================================
 def train_model(configuration):
-    model_type = configuration.get('model_type', 'unsupervised')
-    sequence_length = configuration.get('sequence_length', 60)
-    batch_size = configuration.get('batch_size', 32)
-    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
-    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
+    model_type = configuration['model_type']
+    sequence_length = configuration['sequence_length']
+    batch_size = configuration['batch_size']
+    keyboard_whitelist = configuration['keyboard_whitelist']
+    mouse_whitelist = configuration['mouse_whitelist']
+    gamepad_whitelist = configuration['gamepad_whitelist']
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
 
     # Preprocessing
@@ -465,18 +461,18 @@ def train_model(configuration):
     best_trials = study.best_trials
     print('\nBest Trials:')
     for trial in best_trials:
-        print(f'{trial.number}:{trial.values[0]}:{trial.values[1]}')
+        print(f'Trial: {trial.number} Loss: {trial.values[0]} Params: {trial.values[1]}')
     print('\nPlease copy your desired model from the local models directory.')
 
 # =============================================================================
 # Static Analysis Process
 # =============================================================================
 def run_static_analysis(configuration):
-    model_type = configuration.get('model_type', 'unsupervised')
-    sequence_length = configuration.get('sequence_length', 60)
-    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
-    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
+    model_type = configuration['model_type']
+    sequence_length = configuration['sequence_length']
+    keyboard_whitelist = configuration['keyboard_whitelist']
+    mouse_whitelist = configuration['mouse_whitelist']
+    gamepad_whitelist = configuration['gamepad_whitelist']
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
     
     file = tkinter.filedialog.askopenfilename(
@@ -531,12 +527,13 @@ def run_static_analysis(configuration):
 # Live Analysis Mode
 # =============================================================================
 def run_live_analysis(configuration, root):
-    kill_key = configuration.get('kill_key', '\\')
-    polling_rate = configuration.get('polling_rate', 120)
-    sequence_length = configuration.get('sequence_length', 60)
-    keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
-    mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
-    gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
+    kill_key = configuration['kill_key']
+    model_type = configuration['model_type']
+    polling_rate = configuration['polling_rate']
+    sequence_length = configuration['sequence_length']
+    keyboard_whitelist = configuration['keyboard_whitelist']
+    mouse_whitelist = configuration['mouse_whitelist']
+    gamepad_whitelist = configuration['gamepad_whitelist']
 
     checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
@@ -546,7 +543,6 @@ def run_live_analysis(configuration, root):
     screen_height = root.winfo_screenheight()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_type = configuration.get('model_type', 'unsupervised')
     if model_type == 'unsupervised':
         model = UnsupervisedModel.load_from_checkpoint(checkpoint)
     else:
@@ -595,7 +591,7 @@ def main():
     root.withdraw()
     with open('config.json', 'r') as file_handle:
         configuration = json.load(file_handle)
-    mode = configuration.get('mode', 'none')
+    mode = configuration['mode']
     if mode == 'collect':
         collect_input_data(configuration, root)
     elif mode == 'train':

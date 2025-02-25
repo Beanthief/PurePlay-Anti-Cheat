@@ -2,10 +2,10 @@
   "mode": "train",
   "kill_key": "\\",
   "model_type": "unsupervised",
-  "polling_rate": 120,
   "keyboard_whitelist": [],
   "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
+  "polling_rate": 120,
   "sequence_length": 60,
   "batch_size": 128
 }
