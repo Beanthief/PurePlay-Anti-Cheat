@@ -2,12 +2,12 @@
   "mode": "test",
   "kill_key": "\\",
   "model_type": "unsupervised",
-  "model_structure" : [64],
-  "polling_rate": 60,
+  "model_structure" : [],
+  "polling_rate": 120,
   "keyboard_whitelist": [],
-  "mouse_whitelist": ["angle"],
+  "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
-  "sequence_length": 30,
+  "sequence_length": 60,
   "tuning_patience": 10,
-  "batch_size": 256
+  "batch_size": 128
 }

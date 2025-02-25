@@ -61,7 +61,7 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **polling_rate**  
   *Type:* Integer (Hz)  
-  *Default:* `60`  
+  *Default:* `120`  
   *Description:* The frequency at which keyboard, mouse, and gamepad inputs are polled.
 
 - **keyboard_whitelist**  

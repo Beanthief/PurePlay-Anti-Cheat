@@ -38,7 +38,7 @@ def poll_mouse(mouse_whitelist, scale, last_position):
         current_position = mouse.get_position()
         if last_position is not None:
             delta_x = current_position[0] - last_position[0]
-            delta_y = current_position[1] - last_position[1]
+            delta_y = last_position[1] - current_position[1]
             normalized_delta_x = delta_x / scale
             normalized_delta_y = delta_y / scale
             normalized_angle = math.atan2(normalized_delta_y, normalized_delta_x)
@@ -94,7 +94,7 @@ def poll_gamepad(gamepad_whitelist):
 # =============================================================================
 def collect_input_data(configuration, root):
     kill_key = configuration.get('kill_key', '\\')
-    polling_rate = configuration.get('polling_rate', 60)
+    polling_rate = configuration.get('polling_rate', 120)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
     gamepad_whitelist = configuration.get('gamepad_whitelist', ['LT', 'RT', 'LX', 'LY', 'RX', 'RY'])
@@ -129,7 +129,6 @@ class InputDataset(torch.utils.data.Dataset):
     def __init__(self, file_path, sequence_length, whitelist, label=0):
         self.sequence_length = sequence_length
         self.label = label
-
         data_frame = pandas.read_csv(file_path)
         self.feature_columns = [col for col in whitelist if col in data_frame.columns]
         data_array = data_frame[self.feature_columns].values.astype(numpy.float32)
@@ -283,6 +282,7 @@ class SupervisedModel(lightning.LightningModule):
                 batch_first=True
             )
             self.layers.append(layer)
+            input_dim = hidden_dim
         self.classifier_layer = torch.nn.Linear(layers[-1], 1)
 
         self.loss_function = torch.nn.BCEWithLogitsLoss()
@@ -434,7 +434,7 @@ def train_model(configuration):
                     num_features=len(whitelist),
                     layers=trial_layers,
                     sequence_length=sequence_length,
-                    graph_learning_curve=False
+                    #graph_learning_curve=False
                 )
 
             model.trial = trial
@@ -490,7 +490,7 @@ def train_model(configuration):
 
         early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
             monitor='val_loss',
-            min_delta=1e-5,
+            min_delta=-1e-8,
             patience=10,
             mode='min'
         )
@@ -573,7 +573,7 @@ def run_static_analysis(configuration):
 # =============================================================================
 def run_live_analysis(configuration, root):
     kill_key = configuration.get('kill_key', '\\')
-    polling_rate = configuration.get('polling_rate', 60)
+    polling_rate = configuration.get('polling_rate', 120)
     sequence_length = configuration.get('sequence_length', 60)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
