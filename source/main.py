@@ -1,5 +1,4 @@
 import lightning.pytorch.callbacks
-import optuna.integration
 import tkinter.filedialog
 import matplotlib.pyplot
 import torch.utils.data
