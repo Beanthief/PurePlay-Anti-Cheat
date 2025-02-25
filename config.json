@@ -1,13 +1,11 @@
 {
-  "mode": "test",
+  "mode": "train",
   "kill_key": "\\",
   "model_type": "unsupervised",
-  "model_structure" : [],
   "polling_rate": 120,
   "keyboard_whitelist": [],
   "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
   "sequence_length": 60,
-  "tuning_patience": 10,
   "batch_size": 128
 }

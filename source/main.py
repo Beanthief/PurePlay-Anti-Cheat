@@ -4,6 +4,7 @@ import tkinter.filedialog
 import matplotlib.pyplot
 import torch.utils.data
 import lightning
+import optunahub
 import torch.nn
 import keyboard
 import logging
@@ -345,9 +346,7 @@ class SupervisedModel(lightning.LightningModule):
 # =============================================================================
 def train_model(configuration):
     model_type = configuration.get('model_type', 'unsupervised')
-    model_structure = configuration.get('model_structure', [])
     sequence_length = configuration.get('sequence_length', 60)
-    tuning_patience = configuration.get('tuning_patience', 10)
     batch_size = configuration.get('batch_size', 32)
     keyboard_whitelist = configuration.get('keyboard_whitelist', ['w', 'a', 's', 'd', 'space', 'ctrl'])
     mouse_whitelist = configuration.get('mouse_whitelist', ['left', 'right', 'angle', 'magnitude'])
@@ -397,117 +396,77 @@ def train_model(configuration):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    # Tuning
-    if not model_structure:
-        class ConsecutivePrunedTrialsCallback:
-            def __init__(self, patience):
-                self.patience = patience
-                self.consecutive_pruned = 0
-
-            def __call__(self, study: optuna.Study, trial: optuna.Trial):
-                if trial.state == optuna.trial.TrialState.PRUNED:
-                    self.consecutive_pruned += 1
-                else:
-                    self.consecutive_pruned = 0
-                if self.consecutive_pruned >= self.patience:
-                    print(f'Stopping study: {self.consecutive_pruned} consecutive pruned trials.')
-                    study.stop()
-
-        logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
-
-        def objective(trial):
-            trial_num_layers = trial.suggest_int('num_layers', 1, 3)
-            trial_layers = []
-            for i in range(trial_num_layers):
-                layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
-                trial_layers.append(layer)
-
-            if model_type == 'unsupervised':
-                model = UnsupervisedModel(
-                    num_features=len(whitelist),
-                    layers=trial_layers,
-                    sequence_length=sequence_length,
-                    graph_learning_curve=False
-                )
-            else:
-                model = SupervisedModel(
-                    num_features=len(whitelist),
-                    layers=trial_layers,
-                    sequence_length=sequence_length,
-                    #graph_learning_curve=False
-                )
-
-            model.trial = trial
-            prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor='val_loss')
-            trainer = lightning.Trainer(
-                max_epochs=25,
-                precision='16-mixed',
-                callbacks=[prune_callback],
-                logger=False,
-                enable_checkpointing=False,
-                enable_progress_bar=False,
-                enable_model_summary=False
-            )
-            trainer.fit(model, train_loader, val_loader)
-
-            val_loss = trainer.callback_metrics.get('val_loss')
-            if val_loss is None:
-                raise ValueError('Validation loss not found!')
-            return val_loss.item()
+    # Tuning and Training
+    def objective(trial):
+        num_layers = trial.suggest_int('num_layers', 1, 3)
+        layers = []
+        for i in range(num_layers):
+            layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
+            layers.append(layer)
         
-        study = optuna.create_study(direction='minimize')
-        consecutive_prune_callback = ConsecutivePrunedTrialsCallback(tuning_patience)
-        study.optimize(
-            objective,
-            n_trials=1000,
-            callbacks=[consecutive_prune_callback],
-            gc_after_trial=True
-        )
-
-        best_trial = study.best_trial
-        best_structure = []
-        for i in range(best_trial.params['num_layers']):
-            best_structure.append(best_trial.params[f'layer{i}_dim'])
-        model_structure = best_structure
-
-    # Training
-    if model_structure:
-        logging.getLogger('lightning.pytorch').setLevel(logging.INFO)
         if model_type == 'unsupervised':
-            best_model = UnsupervisedModel(
+            model = UnsupervisedModel(
                 num_features=len(whitelist),
-                layers=model_structure,
-                sequence_length=sequence_length
+                layers=layers,
+                sequence_length=sequence_length,
+                graph_learning_curve=False
             )
         else:
-            best_model = SupervisedModel(
+            model = SupervisedModel(
                 num_features=len(whitelist),
-                layers=model_structure,
+                layers=layers,
                 sequence_length=sequence_length
             )
-        
-        save_dir = tkinter.filedialog.askdirectory(title='Select model save folder')
 
         early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
             monitor='val_loss',
-            min_delta=-1e-8,
+            min_delta=0.0001,
             patience=10,
             mode='min'
         )
-        early_save_callback = lightning.pytorch.callbacks.ModelCheckpoint(
+        checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
             monitor='val_loss',
-            dirpath=save_dir,
-            filename=f'model_{time.strftime('%Y%m%d-%H%M%S')}',
-            save_top_k=1
+            dirpath='models',
+            filename=f"trial_{trial.number}_best",
+            save_top_k=1,
+            mode='min'
         )
         trainer = lightning.Trainer(
-            max_epochs=1000,
-            callbacks=[early_stop_callback, early_save_callback],
+            max_epochs=512,
             precision='16-mixed',
-            logger=False
+            callbacks=[early_stop_callback, checkpoint_callback],
+            logger=False,
+            enable_checkpointing=True,
+            enable_progress_bar=False,
+            enable_model_summary=False
         )
-        trainer.fit(best_model, train_loader, val_loader)
-        print(f'Training complete. Model saved to: {save_dir}')
+        
+        trainer.fit(model, train_loader, val_loader)
+        print(f'[Early Stopping Triggered!] Trial {trial.number} stopped at epoch {trainer.current_epoch}.')
+        best_checkpoint = checkpoint_callback.best_model_path
+        if best_checkpoint:
+            trial.set_user_attr('best_checkpoint', best_checkpoint)
+        
+        val_loss = trainer.callback_metrics.get('val_loss')
+        if val_loss is None:
+            raise ValueError('Validation loss not found!')
+        param_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        return val_loss.item(), param_count
+
+    logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
+    module = optunahub.load_module(package='samplers/auto_sampler')
+    study = optuna.create_study(sampler=module.AutoSampler(), directions=['minimize', 'minimize'])
+    study.optimize(
+        objective,
+        n_trials=100,
+        gc_after_trial=True
+    )
+
+    best_trials = study.best_trials
+    print('\nBest Trials:')
+    for trial in best_trials:
+        print(f'{trial.number}:{trial.values[0]}:{trial.values[1]}')
+    print('\nPlease copy your desired model from the local models directory.')
 
 # =============================================================================
 # Static Analysis Process
