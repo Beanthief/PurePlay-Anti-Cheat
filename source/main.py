@@ -543,6 +543,7 @@ def run_static_analysis(configuration):
 # =============================================================================
 def run_live_analysis(configuration, root):
     kill_key = configuration['kill_key']
+    capture_bind = configuration['capture_bind']
     model_type = configuration['model_type']
     polling_rate = configuration['polling_rate']
     sequence_length = configuration['sequence_length']
@@ -573,12 +574,25 @@ def run_live_analysis(configuration, root):
     while True:
         if keyboard.is_pressed(kill_key):
             break
-
-        kb_row = poll_keyboard(keyboard_whitelist)
-        m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
-        gp_row = poll_gamepad(gamepad_whitelist)
-        row = kb_row + m_row + gp_row
-        sequence.append(row)
+        should_capture = True
+        if capture_bind:
+            should_capture = False
+            try:
+                if mouse.is_pressed(capture_bind):
+                    should_capture = True
+            except:
+                pass
+            try:
+                if keyboard.is_pressed(capture_bind):
+                    should_capture = True
+            except:
+                pass
+        if should_capture:
+            kb_row = poll_keyboard(keyboard_whitelist)
+            m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
+            gp_row = poll_gamepad(gamepad_whitelist)
+            row = kb_row + m_row + gp_row
+            sequence.append(row)
 
         if len(sequence) >= sequence_length:
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
