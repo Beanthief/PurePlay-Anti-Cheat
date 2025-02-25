@@ -32,9 +32,9 @@ def poll_keyboard(keyboard_whitelist):
 def poll_mouse(mouse_whitelist, scale, last_position):
     row = []
     current_position = None
-    for feature in mouse_whitelist:
-        if feature in ['left', 'right', 'middle', 'x1', 'x2']:
-            row.append(1 if mouse.is_pressed(button=feature) else 0)
+    for button in mouse_whitelist:
+        if button in ['left', 'right', 'middle', 'x1', 'x2']:
+            row.append(1 if mouse.is_pressed(button) else 0)
     if 'angle' in mouse_whitelist or 'magnitude' in mouse_whitelist:
         current_position = mouse.get_position()
         delta_x = current_position[0] - last_position[0]
@@ -91,6 +91,7 @@ def poll_gamepad(gamepad_whitelist):
 # =============================================================================
 def collect_input_data(configuration, root):
     kill_key = configuration['kill_key']
+    capture_bind = configuration['capture_bind']
     polling_rate = configuration['polling_rate']
     keyboard_whitelist = configuration['keyboard_whitelist']
     mouse_whitelist = configuration['mouse_whitelist']
@@ -111,11 +112,25 @@ def collect_input_data(configuration, root):
         while True:
             if keyboard.is_pressed(kill_key):
                 break
-            kb_row = poll_keyboard(keyboard_whitelist)
-            m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
-            gp_row = poll_gamepad(gamepad_whitelist)
-            row = kb_row + m_row + gp_row
-            csv_writer.writerow(row)
+            should_capture = True
+            if capture_bind:
+                should_capture = False
+                try:
+                    if mouse.is_pressed(capture_bind):
+                        should_capture = True
+                except:
+                    pass
+                try:
+                    if keyboard.is_pressed(capture_bind):
+                        should_capture = True
+                except:
+                    pass
+            if should_capture:
+                kb_row = poll_keyboard(keyboard_whitelist)
+                m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
+                gp_row = poll_gamepad(gamepad_whitelist)
+                row = kb_row + m_row + gp_row
+                csv_writer.writerow(row)
             time.sleep(1.0 / polling_rate)
     print(f'Data collection stopped. Inputs saved.')
 

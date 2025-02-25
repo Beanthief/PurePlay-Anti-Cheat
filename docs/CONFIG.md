@@ -44,7 +44,12 @@ The mode is set by the `"mode"` key in `config.json`.
 - **kill_key**  
   *Type:* String  
   *Recommended:* `"\\"`  
-  *Description:* The keyboard key that, when pressed, stops data collection. For possible values, see `keyboard_whitelist`.
+  *Description:* The keyboard key that, when pressed, stops the program. For possible values, see `keyboard_whitelist`.
+
+- **capture_bind**  
+  *Type:* String  
+  *Recommended:* `"right"`  
+  *Description:* The button that, when pressed, starts data collection. Can be any button from the keyboard or mouse.
 
 - **model_type**  
   *Type:* String  

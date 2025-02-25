@@ -1,6 +1,7 @@
 {
-  "mode": "train",
+  "mode": "collect",
   "kill_key": "\\",
+  "capture_bind": "right",
   "model_type": "unsupervised",
   "keyboard_whitelist": [],
   "mouse_whitelist": ["angle", "magnitude"],
