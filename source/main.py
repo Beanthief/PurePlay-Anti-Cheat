@@ -32,7 +32,7 @@ def poll_mouse(mouse_whitelist, scale, last_position):
     row = []
     current_position = None
     for button in mouse_whitelist:
-        if button in ['left', 'right', 'middle', 'x1', 'x2']:
+        if button in ['left', 'right', 'middle', 'x', 'x2']:
             row.append(1 if mouse.is_pressed(button) else 0)
     if 'angle' in mouse_whitelist or 'magnitude' in mouse_whitelist:
         current_position = mouse.get_position()

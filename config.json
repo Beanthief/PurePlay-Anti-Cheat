@@ -6,7 +6,7 @@
   "keyboard_whitelist": [],
   "mouse_whitelist": ["angle", "magnitude"],
   "gamepad_whitelist": [],
-  "polling_rate": 120,
-  "sequence_length": 60,
+  "polling_rate": 90,
+  "sequence_length": 30,
   "batch_size": 128
 }
