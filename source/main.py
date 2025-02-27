@@ -70,17 +70,17 @@ class RAWINPUTDEVICE(ctypes.Structure):
 def raw_input_window_procedure(window_handle, message, input_code, data_handle):
     if message == 0x00FF:
         buffer_size = ctypes.wintypes.UINT(0)
-        if user32_library.GetRawInputData(data_handle, 0x10000003, None, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == 0:
-            buffer = ctypes.create_string_buffer(buffer_size.value)
-            if user32_library.GetRawInputData(data_handle, 0x10000003, buffer, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == buffer_size.value:
-                raw_input_data = ctypes.cast(buffer, ctypes.POINTER(RAWINPUT)).contents
-                if raw_input_data.header.dwType == 0:
-                    delta_x = raw_input_data.mouse.lLastX
-                    delta_y = raw_input_data.mouse.lLastY
-                    with mouse_lock:
-                        mouse_deltas[0] += delta_x
-                        mouse_deltas[1] += delta_y
-        return 0
+        if not(user32_library.GetRawInputData(data_handle, 0x10000003, None, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == 0):
+            return 0
+        buffer = ctypes.create_string_buffer(buffer_size.value)
+        if user32_library.GetRawInputData(data_handle, 0x10000003, buffer, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == buffer_size.value:
+            raw_input_data = ctypes.cast(buffer, ctypes.POINTER(RAWINPUT)).contents
+            if raw_input_data.header.dwType == 0:
+                delta_x = raw_input_data.mouse.lLastX
+                delta_y = raw_input_data.mouse.lLastY
+                with mouse_lock:
+                    mouse_deltas[0] += delta_x
+                    mouse_deltas[1] += delta_y
     return win32gui.DefWindowProc(window_handle, message, input_code, data_handle)
 
 def listen_for_mouse_movement():
@@ -220,36 +220,18 @@ def collect_input_data(configuration):
     print('Data collection stopped. Inputs saved.')
 
 # =============================================================================
-# Dataset and Scaler
+# Dataset
 # =============================================================================
-def fit_scaler(file_list, whitelist):
-    frames = []
-    for file in file_list:
-        data_frame = pandas.read_csv(file)
-        valid_cols = [col for col in whitelist if col in data_frame.columns]
-        frames.append(data_frame[valid_cols])
-    combined = pandas.concat(frames, ignore_index=True)
-    scaler = {}
-    if 'deltaX' in whitelist and 'deltaX' in combined.columns:
-        scaler['x_min'] = combined['deltaX'].min()
-        scaler['x_max'] = combined['deltaX'].max()
-    if 'deltaY' in whitelist and 'deltaY' in combined.columns:
-        scaler['y_min'] = combined['deltaY'].min()
-        scaler['y_max'] = combined['deltaY'].max()
-    return scaler
-
 class InputDataset(torch.utils.data.Dataset):
-    def __init__(self, file_path, sequence_length, scaler_values, whitelist, label=0):
+    def __init__(self, file_path, sequence_length, mouse_scalers, whitelist, label=0):
         self.sequence_length = sequence_length
         self.label = label
         data_frame = pandas.read_csv(file_path)
         self.feature_columns = [col for col in whitelist if col in data_frame.columns]
         if 'deltaX' in self.feature_columns:
-            x_min, x_max = scaler_values['x_min'], scaler_values['x_max']
-            data_frame['deltaX'] = (data_frame['deltaX'] - x_min) / (x_max - x_min)
+            data_frame['deltaX'] = (numpy.tanh(mouse_scalers[0] * data_frame['deltaX']) + 1) / 2
         if 'deltaY' in self.feature_columns:
-            y_min, y_max = scaler_values['y_min'], scaler_values['y_max']
-            data_frame['deltaY'] = (data_frame['deltaY'] - y_min) / (y_max - y_min)
+            data_frame['deltaY'] = (numpy.tanh(mouse_scalers[1] * data_frame['deltaY']) + 1) / 2
         data_array = data_frame[self.feature_columns].values.astype(numpy.float32)
         remainder = len(data_array) % sequence_length
         if remainder != 0:
@@ -268,11 +250,11 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, scaler_values=None, graph_learning_curve=True):
+    def __init__(self, num_features, layers, sequence_length, mouse_scalers, graph_learning_curve=True):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
-        self.scaler_values = scaler_values
+        self.mouse_scalers = mouse_scalers
 
         self.encoders = torch.nn.ModuleList()
         dec_dim = num_features
@@ -470,6 +452,7 @@ def train_model(configuration):
     batch_size = configuration['batch_size']
     keyboard_whitelist = configuration['keyboard_whitelist']
     mouse_whitelist = configuration['mouse_whitelist']
+    mouse_scalers = configuration['mouse_scalers']
     gamepad_whitelist = configuration['gamepad_whitelist']
     whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
 
@@ -490,9 +473,8 @@ def train_model(configuration):
             print('No validation files selected. Exiting...')
             return
         
-        scaler_values = fit_scaler(train_files + val_files, whitelist)
-        train_datasets = [InputDataset(file, sequence_length, scaler_values, whitelist) for file in train_files]
-        val_datasets = [InputDataset(file, sequence_length, scaler_values, whitelist) for file in val_files]
+        train_datasets = [InputDataset(file, sequence_length, mouse_scalers, whitelist) for file in train_files]
+        val_datasets = [InputDataset(file, sequence_length, mouse_scalers, whitelist) for file in val_files]
 
         if model_type == 'supervised':
             cheat_train_files = tkinter.filedialog.askopenfilenames(
@@ -509,8 +491,8 @@ def train_model(configuration):
             if not cheat_val_files:
                 print('No files selected. Exiting...')
                 return
-            train_datasets += [InputDataset(file, sequence_length, scaler_values, whitelist, label=1) for file in cheat_train_files]
-            val_datasets += [InputDataset(file, sequence_length, scaler_values, whitelist, label=1) for file in cheat_val_files]
+            train_datasets += [InputDataset(file, sequence_length, mouse_scalers, whitelist, label=1) for file in cheat_train_files]
+            val_datasets += [InputDataset(file, sequence_length, mouse_scalers, whitelist, label=1) for file in cheat_val_files]
 
         train_dataset = torch.utils.data.ConcatDataset(train_datasets)
         val_dataset = torch.utils.data.ConcatDataset(val_datasets)
@@ -534,7 +516,7 @@ def train_model(configuration):
                 num_features=len(whitelist),
                 layers=layers,
                 sequence_length=sequence_length,
-                scaler_values=scaler_values,
+                mouse_scalers=mouse_scalers,
                 graph_learning_curve=False
             )
         else:
@@ -621,7 +603,7 @@ def run_static_analysis(configuration):
         else:
             model = SupervisedModel.load_from_checkpoint(checkpoint)
         
-        test_dataset = InputDataset(file, sequence_length, model.scaler_values, whitelist)
+        test_dataset = InputDataset(file, sequence_length, model.mouse_scalers, whitelist)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
         trainer = lightning.Trainer(
@@ -716,13 +698,11 @@ def run_live_analysis(configuration, root):
 
         if len(sequence) >= sequence_length:
             if x_index is not None:
-                x_min, x_max = model.scaler_values['x_min'], model.scaler_values['x_max']
                 for row in sequence:
-                    row[x_index] = (row[x_index] - x_min) / (x_max - x_min)
+                    row[x_index] = (numpy.tanh(model.mouse_scalers[0] * row[x_index]) + 1) / 2
             if y_index is not None:
-                y_min, y_max = model.scaler_values['y_min'], model.scaler_values['y_max']
                 for row in sequence:
-                    row[y_index] = (row[y_index] - y_min) / (y_max - y_min)
+                    row[y_index] = (numpy.tanh(model.mouse_scalers[1] * row[y_index]) + 1) / 2
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
             if model_type == 'unsupervised':
                 reconstruction = model(input_sequence)

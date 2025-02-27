@@ -78,6 +78,11 @@ The mode is set by the `"mode"` key in `config.json`.
   *Possible Values:*  
     `left, right, middle, x, x2, deltaX, deltaY, angle`  
 
+- **mouse_scalers**  
+  *Type:* List of floats  
+  *Recommended:* `[0.01, 0.01]`  
+  *Description:* (x, y) scaling factors for mouse movement.  
+
 - **gamepad_whitelist**  
   *Type:* List of Strings  
   *Recommended:* `["LT", "RT", "LX", "LY", "RX", "RY"]`  
