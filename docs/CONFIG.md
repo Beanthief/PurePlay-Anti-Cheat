@@ -83,6 +83,10 @@ The mode is set by the `"mode"` key in `config.json`.
   *Recommended:* `[0.01, 0.01]`  
   *Description:* (x, y) scaling factors for mouse movement.  
 
+- **mouse_dpi**  
+  *Type:* Integer  
+  *Description:* The DPI (dots-per-inch) of the user's mouse.
+
 - **gamepad_whitelist**  
   *Type:* List of Strings  
   *Recommended:* `["LT", "RT", "LX", "LY", "RX", "RY"]`  
