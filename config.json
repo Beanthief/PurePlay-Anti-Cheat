@@ -3,10 +3,11 @@
   "kill_key": "\\",
   "capture_bind": "right",
   "model_type": "unsupervised",
+  "model_structure": [220],
   "keyboard_whitelist": [],
-  "mouse_whitelist": ["angle", "magnitude"],
+  "mouse_whitelist": ["deltaX", "deltaY"],
   "gamepad_whitelist": [],
-  "polling_rate": 90,
-  "sequence_length": 30,
-  "batch_size": 128
+  "polling_rate": 120,
+  "sequence_length": 60,
+  "batch_size": 256
 }

@@ -2,8 +2,11 @@ import lightning.pytorch.callbacks
 import tkinter.filedialog
 import matplotlib.pyplot
 import torch.utils.data
+import ctypes.wintypes
 import lightning
 import optunahub
+import threading
+import win32gui
 import torch.nn
 import keyboard
 import logging
@@ -11,12 +14,96 @@ import tkinter
 import optuna
 import XInput
 import pandas
+import ctypes
 import mouse
 import numpy
 import json
-import math
 import time
+import math
 import csv
+
+# =============================================================================
+# Global Variables for Raw Input
+# =============================================================================
+mouse_deltas = [0, 0]  # [delta_x, delta_y]
+mouse_lock = threading.Lock()
+user32_library = ctypes.windll.user32
+
+# =============================================================================
+# ctypes Structures for Raw Input
+# =============================================================================
+class RAWINPUTHEADER(ctypes.Structure):
+    _fields_ = [
+        ("dwType", ctypes.wintypes.DWORD),
+        ("dwSize", ctypes.wintypes.DWORD),
+        ("hDevice", ctypes.wintypes.HANDLE),
+        ("wParam", ctypes.wintypes.WPARAM)
+    ]
+
+class RAWMOUSE(ctypes.Structure):
+    _fields_ = [
+        ("usFlags", ctypes.wintypes.USHORT),
+        ("ulButtons", ctypes.wintypes.ULONG),
+        ("ulRawButtons", ctypes.wintypes.ULONG),
+        ("lLastX", ctypes.c_long),
+        ("lLastY", ctypes.c_long),
+        ("ulExtraInformation", ctypes.wintypes.ULONG)
+    ]
+
+class RAWINPUT(ctypes.Structure):
+    _fields_ = [
+        ("header", RAWINPUTHEADER),
+        ("mouse",  RAWMOUSE)
+    ]
+
+class RAWINPUTDEVICE(ctypes.Structure):
+    _fields_ = [
+        ("usUsagePage", ctypes.wintypes.USHORT),
+        ("usUsage", ctypes.wintypes.USHORT),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("hwndTarget", ctypes.wintypes.HWND)
+    ]
+
+# =============================================================================
+# Raw Input Listener (mouse only)
+# =============================================================================
+def raw_input_window_procedure(window_handle, message, input_code, data_handle):
+    if message == 0x00FF:
+        buffer_size = ctypes.wintypes.UINT(0)
+        if user32_library.GetRawInputData(data_handle, 0x10000003, None, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == 0:
+            buffer = ctypes.create_string_buffer(buffer_size.value)
+            if user32_library.GetRawInputData(data_handle, 0x10000003, buffer, ctypes.byref(buffer_size), ctypes.sizeof(RAWINPUTHEADER)) == buffer_size.value:
+                raw_input_data = ctypes.cast(buffer, ctypes.POINTER(RAWINPUT)).contents
+                if raw_input_data.header.dwType == 0:
+                    delta_x = raw_input_data.mouse.lLastX
+                    delta_y = raw_input_data.mouse.lLastY
+                    with mouse_lock:
+                        mouse_deltas[0] += delta_x
+                        mouse_deltas[1] += delta_y
+        return 0
+    return win32gui.DefWindowProc(window_handle, message, input_code, data_handle)
+
+def listen_for_mouse_movement():
+    instance_handle = win32gui.GetModuleHandle(None)
+    class_name = "RawInputWindow"
+    window = win32gui.WNDCLASS()
+    window.hInstance = instance_handle
+    window.lpszClassName = class_name
+    window.lpfnWndProc = raw_input_window_procedure
+    win32gui.RegisterClass(window)
+    window_handle = win32gui.CreateWindow(class_name, "Raw Input Hidden Window", 0, 0, 0, 0, 0, 0, 0, instance_handle, None)
+    
+    device = RAWINPUTDEVICE()
+    device.usUsagePage = 0x01   # Generic Desktop Controls
+    device.usUsage = 0x02       # Mouse
+    device.dwFlags = 0x00000100 # RIDEV_INPUTSINK: receive input even when unfocused
+    device.hwndTarget = window_handle
+    if not user32_library.RegisterRawInputDevices(ctypes.byref(device), 1, ctypes.sizeof(device)):
+         raise ctypes.WinError()
+
+    while True:
+         win32gui.PumpWaitingMessages()
+         time.sleep(0.001)
 
 # =============================================================================
 # Helper Function to Poll Keyboard
@@ -28,28 +115,26 @@ def poll_keyboard(keyboard_whitelist):
 # =============================================================================
 # Helper Function to Poll Mouse
 # =============================================================================
-def poll_mouse(mouse_whitelist, scale, last_position):
+def poll_mouse(mouse_whitelist):
     row = []
-    current_position = None
     for button in mouse_whitelist:
         if button in ['left', 'right', 'middle', 'x', 'x2']:
             row.append(1 if mouse.is_pressed(button) else 0)
-    if 'angle' in mouse_whitelist or 'magnitude' in mouse_whitelist:
-        current_position = mouse.get_position()
-        delta_x = current_position[0] - last_position[0]
-        delta_y = last_position[1] - current_position[1]
-        normalized_delta_x = delta_x / scale
-        normalized_delta_y = delta_y / scale
-        normalized_angle = math.atan2(normalized_delta_y, normalized_delta_x)
-        if normalized_angle < 0:
-            normalized_angle += 2 * math.pi
-        normalized_angle = normalized_angle / (2 * math.pi)
-        normalized_magnitude = math.hypot(normalized_delta_x, normalized_delta_y)
-        if 'angle' in mouse_whitelist:
-            row.append(normalized_angle)
-        if 'magnitude' in mouse_whitelist:
-            row.append(normalized_magnitude)
-    return row, current_position
+    if any(key in mouse_whitelist for key in ('deltaX', 'deltaY', 'angle')):
+        with mouse_lock:
+            if 'deltaX' in mouse_whitelist:
+                row.append(mouse_deltas[0])
+            if 'deltaY' in mouse_whitelist:
+                row.append(mouse_deltas[1])
+            if 'angle' in mouse_whitelist:
+                angle = math.atan2(mouse_deltas[1], mouse_deltas[0])
+                if angle < 0:
+                    angle = angle % (2 * math.pi)
+                normalized_angle = angle / (2 * math.pi)
+                row.append(normalized_angle)
+            mouse_deltas[0] = 0
+            mouse_deltas[1] = 0
+    return row
 
 # =============================================================================
 # Helper Function to Poll Gamepad
@@ -57,20 +142,20 @@ def poll_mouse(mouse_whitelist, scale, last_position):
 def poll_gamepad(gamepad_whitelist):
     row = []
     if XInput.get_connected()[0]:
-        state = XInput.get_state(0)
-        button_values = XInput.get_button_values(state)
+        gamepad_state = XInput.get_state(0)
+        button_values = XInput.get_button_values(gamepad_state)
         for feature in gamepad_whitelist:
             if feature in button_values:
                 row.append(1 if button_values[feature] else 0)
             else:
                 if feature == 'LT':
-                    triggers = XInput.get_trigger_values(state)
-                    row.append(triggers[0])
+                    trigger_values = XInput.get_trigger_values(gamepad_state)
+                    row.append(trigger_values[0])
                 elif feature == 'RT':
-                    triggers = XInput.get_trigger_values(state)
-                    row.append(triggers[1])
+                    trigger_values = XInput.get_trigger_values(gamepad_state)
+                    row.append(trigger_values[1])
                 elif feature in ['LX', 'LY', 'RX', 'RY']:
-                    left_thumb, right_thumb = XInput.get_thumb_values(state)
+                    left_thumb, right_thumb = XInput.get_thumb_values(gamepad_state)
                     if feature == 'LX':
                         row.append(left_thumb[0])
                     elif feature == 'LY':
@@ -88,7 +173,7 @@ def poll_gamepad(gamepad_whitelist):
 # =============================================================================
 # Collection Mode
 # =============================================================================
-def collect_input_data(configuration, root):
+def collect_input_data(configuration):
     kill_key = configuration['kill_key']
     capture_bind = configuration['capture_bind']
     polling_rate = configuration['polling_rate']
@@ -96,14 +181,14 @@ def collect_input_data(configuration, root):
     mouse_whitelist = configuration['mouse_whitelist']
     gamepad_whitelist = configuration['gamepad_whitelist']
 
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    save_dir = tkinter.filedialog.askdirectory(title='Select data save folder')
+    save_directory = tkinter.filedialog.askdirectory(title='Select data save folder')
+    file_name = f"{save_directory}/inputs_{time.strftime('%Y%m%d-%H%M%S')}.csv"
 
-    smallest_screen_dimension = min(screen_width, screen_height)
-    last_mouse_position = mouse.get_position()
-
-    with open(f'{save_dir}/inputs_{time.strftime('%Y%m%d-%H%M%S')}.csv', mode='w', newline='') as file_handle:
+    if any(key in mouse_whitelist for key in ('deltaX', 'deltaY', 'angle')):
+        raw_input_thread = threading.Thread(target=listen_for_mouse_movement, daemon=True)
+        raw_input_thread.start()
+    
+    with open(file_name, mode='w', newline='') as file_handle:
         csv_writer = csv.writer(file_handle)
         header = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
         csv_writer.writerow(header)
@@ -126,23 +211,46 @@ def collect_input_data(configuration, root):
                     pass
             if should_capture:
                 kb_row = poll_keyboard(keyboard_whitelist)
-                m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
+                m_row = poll_mouse(mouse_whitelist)
                 gp_row = poll_gamepad(gamepad_whitelist)
                 row = kb_row + m_row + gp_row
                 if not (row.count(0) == len(row)):
                     csv_writer.writerow(row)
             time.sleep(1.0 / polling_rate)
-    print(f'Data collection stopped. Inputs saved.')
+    print('Data collection stopped. Inputs saved.')
 
 # =============================================================================
 # Dataset
 # =============================================================================
+
+def fit_scaler(file_list, whitelist):
+    frames = []
+    for file in file_list:
+        data_frame = pandas.read_csv(file)
+        valid_cols = [col for col in whitelist if col in data_frame.columns]
+        frames.append(data_frame[valid_cols])
+    combined = pandas.concat(frames, ignore_index=True)
+    scaler = {}
+    if 'deltaX' in whitelist and 'deltaX' in combined.columns:
+        scaler['x_min'] = combined['deltaX'].min()
+        scaler['x_max'] = combined['deltaX'].max()
+    if 'deltaY' in whitelist and 'deltaY' in combined.columns:
+        scaler['y_min'] = combined['deltaY'].min()
+        scaler['y_max'] = combined['deltaY'].max()
+    return scaler
+
 class InputDataset(torch.utils.data.Dataset):
-    def __init__(self, file_path, sequence_length, whitelist, label=0):
+    def __init__(self, file_path, sequence_length, scaler_values, whitelist, label=0):
         self.sequence_length = sequence_length
         self.label = label
         data_frame = pandas.read_csv(file_path)
         self.feature_columns = [col for col in whitelist if col in data_frame.columns]
+        if 'deltaX' in self.feature_columns:
+            x_min, x_max = scaler_values['x_min'], scaler_values['x_max']
+            data_frame['deltaX'] = (data_frame['deltaX'] - x_min) / (x_max - x_min)
+        if 'deltaY' in self.feature_columns:
+            y_min, y_max = scaler_values['y_min'], scaler_values['y_max']
+            data_frame['deltaY'] = (data_frame['deltaY'] - y_min) / (y_max - y_min)
         data_array = data_frame[self.feature_columns].values.astype(numpy.float32)
         remainder = len(data_array) % sequence_length
         if remainder != 0:
@@ -161,10 +269,11 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, graph_learning_curve=True):
+    def __init__(self, num_features, layers, sequence_length, scaler_values=None, graph_learning_curve=True):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
+        self.scaler_values = scaler_values
 
         self.encoders = torch.nn.ModuleList()
         dec_dim = num_features
@@ -357,6 +466,7 @@ class SupervisedModel(lightning.LightningModule):
 # =============================================================================
 def train_model(configuration):
     model_type = configuration['model_type']
+    model_structure = configuration['model_structure']
     sequence_length = configuration['sequence_length']
     batch_size = configuration['batch_size']
     keyboard_whitelist = configuration['keyboard_whitelist']
@@ -381,8 +491,9 @@ def train_model(configuration):
             print('No validation files selected. Exiting...')
             return
         
-        train_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in train_files]
-        val_datasets = [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist) for file in val_files]
+        scaler_values = fit_scaler(train_files + val_files, whitelist)
+        train_datasets = [InputDataset(file, sequence_length, scaler_values, whitelist) for file in train_files]
+        val_datasets = [InputDataset(file, sequence_length, scaler_values, whitelist) for file in val_files]
 
         if model_type == 'supervised':
             cheat_train_files = tkinter.filedialog.askopenfilenames(
@@ -399,8 +510,8 @@ def train_model(configuration):
             if not cheat_val_files:
                 print('No files selected. Exiting...')
                 return
-            train_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_train_files]
-            val_datasets += [InputDataset(file_path=file, sequence_length=sequence_length, whitelist=whitelist, label=1) for file in cheat_val_files]
+            train_datasets += [InputDataset(file, sequence_length, scaler_values, whitelist, label=1) for file in cheat_train_files]
+            val_datasets += [InputDataset(file, sequence_length, scaler_values, whitelist, label=1) for file in cheat_val_files]
 
         train_dataset = torch.utils.data.ConcatDataset(train_datasets)
         val_dataset = torch.utils.data.ConcatDataset(val_datasets)
@@ -409,17 +520,22 @@ def train_model(configuration):
 
     # Tuning and Training
     def objective(trial):
-        num_layers = trial.suggest_int('num_layers', 1, 3)
-        layers = []
-        for i in range(num_layers):
-            layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
-            layers.append(layer)
+        if model_structure == []:
+            num_layers = trial.suggest_int('num_layers', 1, 2)
+            layers = []
+            for i in range(num_layers):
+                layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
+                layers.append(layer)
+        else:
+            num_layers = len(model_structure)
+            layers = model_structure
         
         if model_type == 'unsupervised':
             model = UnsupervisedModel(
                 num_features=len(whitelist),
                 layers=layers,
                 sequence_length=sequence_length,
+                scaler_values=scaler_values,
                 graph_learning_curve=False
             )
         else:
@@ -469,7 +585,7 @@ def train_model(configuration):
     study = optuna.create_study(sampler=module.AutoSampler(), directions=['minimize', 'minimize'])
     study.optimize(
         objective,
-        n_trials=100,
+        n_trials=(50 if model_structure == [] else 1),
         gc_after_trial=True
     )
 
@@ -502,15 +618,12 @@ def run_static_analysis(configuration):
     # Analyze data
     if file and checkpoint:
         if model_type == 'unsupervised':
-            test_dataset = InputDataset(file, sequence_length, whitelist)
-        else:
-            test_dataset = InputDataset(file, sequence_length=sequence_length, input_whitelist=whitelist)
-        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
-
-        if model_type == 'unsupervised':
             model = UnsupervisedModel.load_from_checkpoint(checkpoint)
         else:
             model = SupervisedModel.load_from_checkpoint(checkpoint)
+        
+        test_dataset = InputDataset(file, sequence_length, model.scaler_values, whitelist)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
         trainer = lightning.Trainer(
             logger=False,
@@ -550,13 +663,19 @@ def run_live_analysis(configuration, root):
     keyboard_whitelist = configuration['keyboard_whitelist']
     mouse_whitelist = configuration['mouse_whitelist']
     gamepad_whitelist = configuration['gamepad_whitelist']
-
+    whitelist = keyboard_whitelist + mouse_whitelist + gamepad_whitelist
+    
+    x_index, y_index = None
+    for i, feature in enumerate(whitelist):
+        if feature == 'deltaX':
+            x_index = i
+        if feature == 'deltaY':
+            y_index = i
+    
     checkpoint = tkinter.filedialog.askopenfilename(
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if model_type == 'unsupervised':
@@ -566,8 +685,9 @@ def run_live_analysis(configuration, root):
     model.to(device)
     model.eval()
 
-    smallest_screen_dimension = min(screen_width, screen_height)
-    last_mouse_position = None
+    if any(key in mouse_whitelist for key in ('deltaX', 'deltaY', 'angle')):
+        raw_input_thread = threading.Thread(target=listen_for_mouse_movement, daemon=True)
+        raw_input_thread.start()
     sequence = []
 
     print(f'Polling devices for live analysis (press {kill_key} to stop)...')
@@ -589,13 +709,21 @@ def run_live_analysis(configuration, root):
                 pass
         if should_capture:
             kb_row = poll_keyboard(keyboard_whitelist)
-            m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
+            m_row = poll_mouse(mouse_whitelist)
             gp_row = poll_gamepad(gamepad_whitelist)
             row = kb_row + m_row + gp_row
             if not (row.count(0) == len(row)):
                 sequence.append(row)
 
         if len(sequence) >= sequence_length:
+            if x_index is not None:
+                x_min, x_max = model.scaler_values['x_min'], model.scaler_values['x_max']
+                for row in sequence:
+                    row[x_index] = (row[x_index] - x_min) / (x_max - x_min)
+            if y_index is not None:
+                y_min, y_max = model.scaler_values['y_min'], model.scaler_values['y_max']
+                for row in sequence:
+                    row[y_index] = (row[y_index] - y_min) / (y_max - y_min)
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
             if model_type == 'unsupervised':
                 reconstruction = model(input_sequence)
@@ -623,7 +751,7 @@ def main():
         configuration = json.load(file_handle)
     mode = configuration['mode']
     if mode == 'collect':
-        collect_input_data(configuration, root)
+        collect_input_data(configuration)
     elif mode == 'train':
         train_model(configuration)
     elif mode == 'test':
