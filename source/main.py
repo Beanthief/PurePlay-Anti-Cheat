@@ -253,7 +253,7 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, mouse_scalers, graph_learning_curve=True):
+    def __init__(self, num_features, layers, sequence_length, mouse_scalers, training_mode=False):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
@@ -289,8 +289,8 @@ class UnsupervisedModel(lightning.LightningModule):
         self.epoch_indices = []
         self.epoch_counter = 0
         
-        self.graph_learning_curve = graph_learning_curve
-        if self.graph_learning_curve:
+        self.training_mode = training_mode
+        if self.training_mode:
             matplotlib.pyplot.ion()
             self.figure, self.axes = matplotlib.pyplot.subplots()
 
@@ -304,14 +304,14 @@ class UnsupervisedModel(lightning.LightningModule):
         return reconstruction
 
     def training_step(self, batch, batch_idx):
-        inputs, _ = batch
+        inputs, labels = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
         self.train_metric_history.append(reconstruction_error.detach().cpu())
         return reconstruction_error
 
     def validation_step(self, batch, batch_idx):
-        inputs, _ = batch
+        inputs, labels = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
         self.val_metric_history.append(reconstruction_error.detach().cpu())
@@ -319,31 +319,30 @@ class UnsupervisedModel(lightning.LightningModule):
         return reconstruction_error
     
     def on_validation_epoch_end(self):
-        if self.graph_learning_curve:
-            avg_train_loss = torch.stack(self.train_metric_history).mean().item() if self.train_metric_history else None
-            avg_val_loss = torch.stack(self.val_metric_history).mean().item() if self.val_metric_history else None
-            if avg_train_loss is None or avg_val_loss is None:
-                return
-            self.epoch_indices.append(self.epoch_counter)
-            self.epoch_counter += 1
-            if not hasattr(self, 'avg_train_losses'):
-                self.avg_train_losses = []
-                self.avg_val_losses = []
-            self.avg_train_losses.append(avg_train_loss)
-            self.avg_val_losses.append(avg_val_loss)
-            self.axes.clear()
-            self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
-            self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
-            self.axes.set_xlabel('Epoch')
-            self.axes.set_ylabel('RMSE')
-            self.axes.legend()
-            self.figure.canvas.draw()
-            matplotlib.pyplot.pause(0.001)
-            self.train_metric_history = []
-            self.val_metric_history = []
+        avg_train_loss = torch.stack(self.train_metric_history).mean().item() if self.train_metric_history else None
+        avg_val_loss = torch.stack(self.val_metric_history).mean().item() if self.val_metric_history else None
+        if avg_train_loss is None or avg_val_loss is None:
+            return
+        self.epoch_indices.append(self.epoch_counter)
+        self.epoch_counter += 1
+        if not hasattr(self, 'avg_train_losses'):
+            self.avg_train_losses = []
+            self.avg_val_losses = []
+        self.avg_train_losses.append(avg_train_loss)
+        self.avg_val_losses.append(avg_val_loss)
+        self.axes.clear()
+        self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
+        self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
+        self.axes.set_xlabel('Epoch')
+        self.axes.set_ylabel('RMSE')
+        self.axes.legend()
+        self.figure.canvas.draw()
+        matplotlib.pyplot.pause(0.001)
+        self.train_metric_history = []
+        self.val_metric_history = []
         
     def test_step(self, batch, batch_idx):
-        inputs, _ = batch
+        inputs, labels = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
         self.test_metric_history.append(reconstruction_error.detach().cpu())
@@ -373,10 +372,11 @@ class UnsupervisedModel(lightning.LightningModule):
         }
 
 class SupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length):
+    def __init__(self, num_features, layers, sequence_length, mouse_scalers, training_mode=False):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
+        self.mouse_scalers = mouse_scalers
 
         self.layers = torch.nn.ModuleList()
         input_dim = num_features
@@ -391,29 +391,62 @@ class SupervisedModel(lightning.LightningModule):
         self.classifier_layer = torch.nn.Linear(layers[-1], 1)
 
         self.loss_function = torch.nn.BCEWithLogitsLoss()
+
+        self.train_metric_history = []
+        self.val_metric_history = []
         self.test_metric_history = []
+        self.epoch_indices = []
+        self.epoch_counter = 0
+        
+        self.training_mode = training_mode
+        if self.training_mode:
+            matplotlib.pyplot.ion()
+            self.figure, self.axes = matplotlib.pyplot.subplots()
 
     def forward(self, input_sequence):
         output = input_sequence
         for lstm_layer in self.layers:
             output, (hidden_state, cell_state) = lstm_layer(output)
         last_output = output[:, -1, :]
-        classification_output = self.classifier_layer(last_output).squeeze(1)
-        return classification_output
+        class_prediction = self.classifier_layer(last_output).squeeze(1)
+        return class_prediction
     
     def training_step(self, batch, batch_idx):
         inputs, labels = batch
-        output = self.forward(inputs)
-        loss = self.loss_function(output, labels)
+        logits = self.forward(inputs)
+        loss = self.loss_function(logits, labels)
         self.log('train_loss', loss, prog_bar=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch
-        output = self.forward(inputs)
-        loss = self.loss_function(output, labels)
+        class_prediction = self.forward(inputs)
+        loss = self.loss_function(class_prediction, labels)
         self.log('val_loss', loss, prog_bar=True, on_epoch=True)
         return loss
+    
+    def on_validation_epoch_end(self):
+        avg_train_loss = torch.stack(self.train_metric_history).mean().item() if self.train_metric_history else None
+        avg_val_loss = torch.stack(self.val_metric_history).mean().item() if self.val_metric_history else None
+        if avg_train_loss is None or avg_val_loss is None:
+            return
+        self.epoch_indices.append(self.epoch_counter)
+        self.epoch_counter += 1
+        if not hasattr(self, 'avg_train_losses'):
+            self.avg_train_losses = []
+            self.avg_val_losses = []
+        self.avg_train_losses.append(avg_train_loss)
+        self.avg_val_losses.append(avg_val_loss)
+        self.axes.clear()
+        self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
+        self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
+        self.axes.set_xlabel('Epoch')
+        self.axes.set_ylabel('BCELoss')
+        self.axes.legend()
+        self.figure.canvas.draw()
+        matplotlib.pyplot.pause(0.001)
+        self.train_metric_history = []
+        self.val_metric_history = []
 
     def test_step(self, batch, batch_idx):
         inputs, labels = batch
@@ -434,7 +467,7 @@ class SupervisedModel(lightning.LightningModule):
             optimizer,
             mode='min',
             factor=0.1,
-            patience=3,
+            patience=5,
             min_lr=0.00001
         )
         return {
@@ -520,13 +553,15 @@ def train_model(configuration):
                 layers=layers,
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
-                graph_learning_curve=False
+                training_mode=True
             )
         else:
             model = SupervisedModel(
                 num_features=len(whitelist),
                 layers=layers,
-                sequence_length=sequence_length
+                sequence_length=sequence_length,
+                mouse_scalers=mouse_scalers,
+                training_mode=True
             )
 
         early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
