@@ -253,7 +253,7 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, mouse_scalers, training_mode=False):
+    def __init__(self, num_features, layers, sequence_length, mouse_scalers, save_dir, trial_number=None):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
@@ -285,14 +285,15 @@ class UnsupervisedModel(lightning.LightningModule):
         self.loss_function = torch.nn.MSELoss()
         self.train_metric_history = []
         self.val_metric_history = []
+        self.avg_train_losses = []
+        self.avg_val_losses = []
         self.test_metric_history = []
         self.epoch_indices = []
         self.epoch_counter = 0
-        
-        self.training_mode = training_mode
-        if self.training_mode:
-            matplotlib.pyplot.ion()
-            self.figure, self.axes = matplotlib.pyplot.subplots()
+
+        self.save_dir = save_dir
+        self.trial_number = trial_number
+        self.figure, self.axes = matplotlib.pyplot.subplots()
 
     def forward(self, input_sequence):
         output = input_sequence
@@ -325,34 +326,36 @@ class UnsupervisedModel(lightning.LightningModule):
             return
         self.epoch_indices.append(self.epoch_counter)
         self.epoch_counter += 1
-        if not hasattr(self, 'avg_train_losses'):
-            self.avg_train_losses = []
-            self.avg_val_losses = []
         self.avg_train_losses.append(avg_train_loss)
         self.avg_val_losses.append(avg_val_loss)
+        self.train_metric_history = []
+        self.val_metric_history = []
+
+    def on_fit_end(self):
         self.axes.clear()
         self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
         self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
         self.axes.set_xlabel('Epoch')
         self.axes.set_ylabel('RMSE')
         self.axes.legend()
-        self.figure.canvas.draw()
-        matplotlib.pyplot.pause(0.001)
-        self.train_metric_history = []
-        self.val_metric_history = []
+        self.figure.savefig(f'{self.save_dir}/trial{self.trial_number}_unsupervised_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        matplotlib.pyplot.close(self.figure)
+        return super().on_fit_end()
         
     def test_step(self, batch, batch_idx):
         inputs, labels = batch
         reconstruction = self.forward(inputs)
         reconstruction_error = torch.sqrt(self.loss_function(reconstruction, inputs))
         self.test_metric_history.append(reconstruction_error.detach().cpu())
-        self.log('metric', reconstruction_error)
-        return {'metric': reconstruction_error}
-
-    def on_test_epoch_end(self):
-        average_error = torch.stack(self.test_metric_history).mean()
-        self.log('agg_metric', average_error)
-        return {'agg_metric': average_error}
+    
+    def on_test_end(self):
+        self.axes.clear()
+        self.axes.plot(list(range(len(self.test_metric_history))), self.test_metric_history)
+        self.axes.set_xlabel('Sequence')
+        self.axes.set_ylabel('Reconstruction Error (RMSE)')
+        self.axes.set_title(f'Average Error: {torch.stack(self.test_metric_history).mean()}')
+        self.figure.savefig(f'{self.save_dir}/report_unsupervised_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        return super().on_test_end()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
@@ -372,7 +375,7 @@ class UnsupervisedModel(lightning.LightningModule):
         }
 
 class SupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, mouse_scalers, training_mode=False):
+    def __init__(self, num_features, layers, sequence_length, mouse_scalers, save_dir, trial_number=None):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
@@ -394,14 +397,15 @@ class SupervisedModel(lightning.LightningModule):
 
         self.train_metric_history = []
         self.val_metric_history = []
+        self.avg_train_losses = []
+        self.avg_val_losses = []
         self.test_metric_history = []
         self.epoch_indices = []
         self.epoch_counter = 0
         
-        self.training_mode = training_mode
-        if self.training_mode:
-            matplotlib.pyplot.ion()
-            self.figure, self.axes = matplotlib.pyplot.subplots()
+        self.save_dir = save_dir
+        self.trial_number = trial_number
+        self.figure, self.axes = matplotlib.pyplot.subplots()
 
     def forward(self, input_sequence):
         output = input_sequence
@@ -432,34 +436,36 @@ class SupervisedModel(lightning.LightningModule):
             return
         self.epoch_indices.append(self.epoch_counter)
         self.epoch_counter += 1
-        if not hasattr(self, 'avg_train_losses'):
-            self.avg_train_losses = []
-            self.avg_val_losses = []
         self.avg_train_losses.append(avg_train_loss)
         self.avg_val_losses.append(avg_val_loss)
+        self.train_metric_history = []
+        self.val_metric_history = []
+
+    def on_fit_end(self):
         self.axes.clear()
         self.axes.plot(self.epoch_indices, self.avg_train_losses, label='Train Loss')
         self.axes.plot(self.epoch_indices, self.avg_val_losses, label='Val Loss')
         self.axes.set_xlabel('Epoch')
         self.axes.set_ylabel('BCELoss')
         self.axes.legend()
-        self.figure.canvas.draw()
-        matplotlib.pyplot.pause(0.001)
-        self.train_metric_history = []
-        self.val_metric_history = []
+        self.figure.savefig(f'{self.save_dir}/trial{self.trial_number}_supervised_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        matplotlib.pyplot.close(self.figure)
+        return super().on_fit_end()
 
     def test_step(self, batch, batch_idx):
         inputs, labels = batch
         logits = self.forward(inputs)
         confidence = torch.sigmoid(logits)
         self.test_metric_history.append(confidence.detach().cpu())
-        self.log('metric', confidence.mean())
-        return {'metric': confidence}
 
-    def on_test_epoch_end(self):
-        average_confidence = torch.stack(self.test_metric_history).mean()
-        self.log('agg_metric', average_confidence)
-        return {'agg_metric': average_confidence}
+    def on_test_end(self):
+        self.axes.clear()
+        self.axes.plot(list(range(len(self.test_metric_history))), self.test_metric_history)
+        self.axes.set_xlabel('Sequence')
+        self.axes.set_ylabel('Confidence')
+        self.axes.set_title(f'Average Confidence: {torch.stack(self.test_metric_history).mean()}')
+        self.figure.savefig(f'{self.save_dir}/report_supervised_{time.strftime('%Y%m%d-%H%M%S')}.png')
+        return super().on_test_end()
     
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
@@ -535,6 +541,8 @@ def train_model(configuration):
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
+        save_dir = tkinter.filedialog.askdirectory(title='Select model/graph save location')
+
     # Tuning and Training
     def objective(trial):
         if model_structure == []:
@@ -553,7 +561,8 @@ def train_model(configuration):
                 layers=layers,
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
-                training_mode=True
+                save_dir=save_dir,
+                trial_number=trial.number
             )
         else:
             model = SupervisedModel(
@@ -561,7 +570,8 @@ def train_model(configuration):
                 layers=layers,
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
-                training_mode=True
+                save_dir=save_dir,
+                trial_number=trial.number
             )
 
         early_stop_callback = lightning.pytorch.callbacks.EarlyStopping(
@@ -572,7 +582,7 @@ def train_model(configuration):
         )
         checkpoint_callback = lightning.pytorch.callbacks.ModelCheckpoint(
             monitor='val_loss',
-            dirpath='models',
+            dirpath=save_dir,
             filename=f"trial_{trial.number}_best",
             save_top_k=1,
             mode='min'
@@ -633,6 +643,7 @@ def run_static_analysis(configuration):
         title='Select model checkpoint file',
         filetypes=[('Checkpoint Files', '*.ckpt')]
     )
+    report_dir = tkinter.filedialog.askdirectory(title='Select report save location')
 
     # Analyze data
     if file and checkpoint:
@@ -640,7 +651,8 @@ def run_static_analysis(configuration):
             model = UnsupervisedModel.load_from_checkpoint(checkpoint)
         else:
             model = SupervisedModel.load_from_checkpoint(checkpoint)
-        
+        model.save_dir = report_dir
+
         test_dataset = InputDataset(file, sequence_length, model.mouse_scalers, whitelist)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
@@ -648,27 +660,9 @@ def run_static_analysis(configuration):
             logger=False,
             enable_checkpointing=False,
         )
-        test_output = trainer.test(model, dataloaders=test_loader, ckpt_path=None)
-        indices = list(range(len(model.test_metric_history)))
-        aggregated_metric = test_output[0]['agg_metric']
+        trainer.test(model, dataloaders=test_loader, ckpt_path=None)
     else:
         print('Data or model not selected. Exiting.')
-
-    # Graph results
-    if model.test_metric_history:
-        report_dir = tkinter.filedialog.askdirectory(title='Select report save folder')
-        matplotlib.pyplot.figure()
-        matplotlib.pyplot.plot(indices, model.test_metric_history)
-        matplotlib.pyplot.xlabel('Sequence Index')
-        if model_type == 'unsupervised':
-            matplotlib.pyplot.ylabel('Reconstruction Error (RMSE)')
-        else:
-            matplotlib.pyplot.ylabel('Cheating Confidence')
-        matplotlib.pyplot.title(f'Model Type: {model_type} - Average: {aggregated_metric}')
-        matplotlib.pyplot.savefig(f'{report_dir}/report_{model_type}_{time.strftime('%Y%m%d-%H%M%S')}.png')
-        print(f'Analysis complete. Graph saved to {report_dir}')
-    else:
-        print('No test metrics found. Exiting.')
 
 # =============================================================================
 # Live Analysis Mode
@@ -763,6 +757,7 @@ def main():
             torch.set_float32_matmul_precision('medium')
             print(f'Tensor Cores detected on device: "{processor}". Using medium precision for matmul.')
 
+    matplotlib.use("Agg")
     root = tkinter.Tk()
     root.withdraw()
     with open('config.json', 'r') as file_handle:

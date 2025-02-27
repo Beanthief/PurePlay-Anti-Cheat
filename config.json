@@ -1,15 +1,15 @@
 {
-  "mode": "collect",
+  "mode": "train",
   "kill_key": "\\",
   "capture_bind": "right",
   "model_type": "unsupervised",
-  "model_structure": [220],
+  "model_structure": [],
   "keyboard_whitelist": [],
   "mouse_whitelist": ["deltaX", "deltaY", "angle"],
   "mouse_scalers": [0.01, 0.01],
   "mouse_dpi": 1600,
   "gamepad_whitelist": [],
-  "polling_rate": 120,
-  "sequence_length": 60,
+  "polling_rate": 60,
+  "sequence_length": 30,
   "batch_size": 256
 }
