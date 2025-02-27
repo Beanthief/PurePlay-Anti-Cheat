@@ -5,7 +5,7 @@
   "model_type": "unsupervised",
   "model_structure": [220],
   "keyboard_whitelist": [],
-  "mouse_whitelist": ["deltaX", "deltaY"],
+  "mouse_whitelist": ["deltaX", "deltaY", "angle"],
   "gamepad_whitelist": [],
   "polling_rate": 120,
   "sequence_length": 60,

@@ -59,6 +59,11 @@ The mode is set by the `"mode"` key in `config.json`.
   - `"unsupervised"`  
   - `"supervised"`  
 
+- **model_structure**  
+  *Type:* List of neuron counts per layer  
+  *Default:* `[]`  
+  *Description:* Allows the user to manually design the model structure.
+
 - **keyboard_whitelist**  
   *Type:* List of Strings  
   *Recommended:* `["w", "a", "s", "d", "space", "ctrl"]`  
@@ -68,10 +73,10 @@ The mode is set by the `"mode"` key in `config.json`.
 
 - **mouse_whitelist**  
   *Type:* List of Strings  
-  *Recommended:* `["angle", "magnitude"]`  
+  *Recommended:* `["deltaX", "deltaY", "angle"]`  
   *Description:* List of mouse features to capture.  
   *Possible Values:*  
-    `left, right, middle, x, x2, angle, magnitude`  
+    `left, right, middle, x, x2, deltaX, deltaY, angle`  
 
 - **gamepad_whitelist**  
   *Type:* List of Strings  

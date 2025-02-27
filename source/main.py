@@ -220,9 +220,8 @@ def collect_input_data(configuration):
     print('Data collection stopped. Inputs saved.')
 
 # =============================================================================
-# Dataset
+# Dataset and Scaler
 # =============================================================================
-
 def fit_scaler(file_list, whitelist):
     frames = []
     for file in file_list:
