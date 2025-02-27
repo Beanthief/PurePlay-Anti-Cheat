@@ -129,7 +129,8 @@ def collect_input_data(configuration, root):
                 m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
                 gp_row = poll_gamepad(gamepad_whitelist)
                 row = kb_row + m_row + gp_row
-                csv_writer.writerow(row)
+                if row.count(0) == len(row):
+                    csv_writer.writerow(row)
             time.sleep(1.0 / polling_rate)
     print(f'Data collection stopped. Inputs saved.')
 
@@ -591,7 +592,8 @@ def run_live_analysis(configuration, root):
             m_row, last_mouse_position = poll_mouse(mouse_whitelist, smallest_screen_dimension, last_mouse_position)
             gp_row = poll_gamepad(gamepad_whitelist)
             row = kb_row + m_row + gp_row
-            sequence.append(row)
+            if row.count(0) == len(row):
+                sequence.append(row)
 
         if len(sequence) >= sequence_length:
             input_sequence = torch.tensor([sequence[-sequence_length:]], dtype=torch.float32, device=device)
