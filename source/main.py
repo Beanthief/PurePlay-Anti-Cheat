@@ -253,11 +253,12 @@ class InputDataset(torch.utils.data.Dataset):
 # Models
 # =============================================================================
 class UnsupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, mouse_scalers, save_dir, trial_number=None):
+    def __init__(self, num_features, layers, learning_rate, dropout, sequence_length, mouse_scalers, save_dir, trial_number=None):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
         self.mouse_scalers = mouse_scalers
+        self.learning_rate = learning_rate
 
         self.encoders = torch.nn.ModuleList()
         dec_dim = num_features
@@ -265,7 +266,8 @@ class UnsupervisedModel(lightning.LightningModule):
             encoder = torch.nn.LSTM(
                 input_size=dec_dim,
                 hidden_size=enc_dim,
-                batch_first=True
+                batch_first=True,
+                dropout=dropout
             )
             self.encoders.append(encoder)
             dec_dim = enc_dim
@@ -276,7 +278,8 @@ class UnsupervisedModel(lightning.LightningModule):
             decoder = torch.nn.LSTM(
                 input_size=last_enc_dim,
                 hidden_size=dec_dim,
-                batch_first=True
+                batch_first=True,
+                dropout=dropout
             )
             self.decoders.append(decoder)
             last_enc_dim = dec_dim
@@ -358,28 +361,15 @@ class UnsupervisedModel(lightning.LightningModule):
         return super().on_test_end()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=0.1,
-            patience=5,
-            min_lr=0.00001
-        )
-        return {
-            'optimizer': optimizer,
-            'lr_scheduler': {
-                'scheduler': scheduler,
-                'monitor': 'val_loss'
-            }
-        }
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
 class SupervisedModel(lightning.LightningModule):
-    def __init__(self, num_features, layers, sequence_length, mouse_scalers, save_dir, trial_number=None):
+    def __init__(self, num_features, layers, learning_rate, dropout, sequence_length, mouse_scalers, save_dir, trial_number=None):
         super().__init__()
         self.save_hyperparameters()
         self.sequence_length = sequence_length
         self.mouse_scalers = mouse_scalers
+        self.learning_rate = learning_rate
 
         self.layers = torch.nn.ModuleList()
         input_dim = num_features
@@ -387,7 +377,8 @@ class SupervisedModel(lightning.LightningModule):
             layer = torch.nn.LSTM(
                 input_size=input_dim,
                 hidden_size=hidden_dim,
-                batch_first=True
+                batch_first=True,
+                dropout=dropout
             )
             self.layers.append(layer)
             input_dim = hidden_dim
@@ -468,21 +459,7 @@ class SupervisedModel(lightning.LightningModule):
         return super().on_test_end()
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=0.1,
-            patience=5,
-            min_lr=0.00001
-        )
-        return {
-            'optimizer': optimizer,
-            'lr_scheduler': {
-                'scheduler': scheduler,
-                'monitor': 'val_loss'
-            }
-        }
+        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
 # =============================================================================
 # Training Process
@@ -491,7 +468,6 @@ def train_model(configuration):
     model_type = configuration['model_type']
     model_structure = configuration['model_structure']
     sequence_length = configuration['sequence_length']
-    batch_size = configuration['batch_size']
     keyboard_whitelist = configuration['keyboard_whitelist']
     mouse_whitelist = configuration['mouse_whitelist']
     mouse_scalers = configuration['mouse_scalers']
@@ -538,27 +514,35 @@ def train_model(configuration):
 
         train_dataset = torch.utils.data.ConcatDataset(train_datasets)
         val_dataset = torch.utils.data.ConcatDataset(val_datasets)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        
 
         save_dir = tkinter.filedialog.askdirectory(title='Select model/graph save location')
 
     # Tuning and Training
     def objective(trial):
+        batch_size = trial.suggest_int('batch_size', 32, 512, log=True)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
         if model_structure == []:
-            num_layers = trial.suggest_int('num_layers', 1, 2)
+            num_layers = trial.suggest_int('num_layers', 1, 5)
             layers = []
             for i in range(num_layers):
-                layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=5)
+                layer = trial.suggest_int(f'layer{i}_dim', 1, 256, step=15)
                 layers.append(layer)
         else:
             num_layers = len(model_structure)
             layers = model_structure
+
+        learning_rate = trial.suggest_float('learning_rate', 0.00001, 0.01, log=True)
+        dropout = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
         
         if model_type == 'unsupervised':
             model = UnsupervisedModel(
                 num_features=len(whitelist),
                 layers=layers,
+                learning_rate=learning_rate,
+                dropout=dropout,
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
                 save_dir=save_dir,
@@ -568,6 +552,8 @@ def train_model(configuration):
             model = SupervisedModel(
                 num_features=len(whitelist),
                 layers=layers,
+                learning_rate=learning_rate,
+                dropout=dropout
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
                 save_dir=save_dir,
@@ -618,6 +604,10 @@ def train_model(configuration):
         gc_after_trial=True
     )
 
+    importances = optuna.importance.get_param_importances(study)
+    print('\nTuning Importances:')
+    for key, value in importances.items():
+        print(f'{key}:{value}')
     best_trials = study.best_trials
     print('\nBest Trials:')
     for trial in best_trials:

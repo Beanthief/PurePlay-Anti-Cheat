@@ -10,6 +10,5 @@
   "mouse_dpi": 1600,
   "gamepad_whitelist": [],
   "polling_rate": 60,
-  "sequence_length": 30,
-  "batch_size": 256
+  "sequence_length": 30
 }

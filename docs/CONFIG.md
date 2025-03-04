@@ -104,11 +104,6 @@ The mode is set by the `"mode"` key in `config.json`.
   *Recommended:* `60`  
   *Description:* The number of polls per input pattern you want to recognize.
 
-- **batch_size**  
-  *Type:* Integer  
-  *Recommended:* `64`  
-  *Description:* Number of sequences per training batch.
-
 ---
 
 ## 3. Understanding Feature Selection
