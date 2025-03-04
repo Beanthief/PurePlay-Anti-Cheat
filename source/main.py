@@ -569,7 +569,7 @@ def train_model(configuration):
                 num_features=len(whitelist),
                 layers=layers,
                 learning_rate=learning_rate,
-                dropout=dropout
+                dropout=dropout,
                 sequence_length=sequence_length,
                 mouse_scalers=mouse_scalers,
                 save_dir=save_dir,
