@@ -90,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo Installing conda packages...
-call "%CONDA_PATH%" install -y -q pytorch-gpu lightning pandas matplotlib optuna cmaes scipy pywin32
+call "%CONDA_PATH%" install -y -q pytorch-gpu lightning pandas matplotlib optuna optuna-integration pywin32
 if errorlevel 1 (
     echo Failed to install conda packages.
     pause
@@ -98,7 +98,7 @@ if errorlevel 1 (
 )
 
 echo Installing pip packages...
-call pip install XInput-Python keyboard mouse optunahub
+call pip install XInput-Python keyboard mouse
 if errorlevel 1 (
     echo Failed to install pip packages.
     pause

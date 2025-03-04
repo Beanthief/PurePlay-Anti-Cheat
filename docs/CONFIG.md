@@ -104,6 +104,11 @@ The mode is set by the `"mode"` key in `config.json`.
   *Recommended:* `60`  
   *Description:* The number of polls per input pattern you want to recognize.
 
+- **tuning_patience**  
+  *Type:* Integer  
+  *Recommended:* `10`  
+  *Description:* The number of consecutive pruned tuning trials before early stopping. 
+
 ---
 
 ## 3. Understanding Feature Selection

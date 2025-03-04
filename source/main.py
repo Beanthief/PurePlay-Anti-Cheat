@@ -1,5 +1,6 @@
 import lightning.pytorch.callbacks
 import tkinter.filedialog
+import optuna.integration
 import matplotlib.pyplot
 import torch.utils.data
 import ctypes.wintypes
@@ -468,6 +469,7 @@ def train_model(configuration):
     model_type = configuration['model_type']
     model_structure = configuration['model_structure']
     sequence_length = configuration['sequence_length']
+    tuning_patience = configuration['tuning_patience']
     keyboard_whitelist = configuration['keyboard_whitelist']
     mouse_whitelist = configuration['mouse_whitelist']
     mouse_scalers = configuration['mouse_scalers']
@@ -519,6 +521,20 @@ def train_model(configuration):
         save_dir = tkinter.filedialog.askdirectory(title='Select model/graph save location')
 
     # Tuning and Training
+    class ConsecutivePrunedTrialsCallback:
+        def __init__(self, patience):
+            self.patience = patience
+            self.consecutive_pruned = 0
+
+        def __call__(self, study: optuna.Study, trial: optuna.Trial):
+            if trial.state == optuna.trial.TrialState.PRUNED:
+                self.consecutive_pruned += 1
+            else:
+                self.consecutive_pruned = 0
+            if self.consecutive_pruned >= self.patience:
+                print(f'Stopping study: {self.consecutive_pruned} consecutive pruned trials.')
+                study.stop()
+
     def objective(trial):
         batch_size = trial.suggest_int('batch_size', 32, 512, log=True)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -573,10 +589,11 @@ def train_model(configuration):
             save_top_k=1,
             mode='min'
         )
+        prune_callback = optuna.integration.PyTorchLightningPruningCallback(trial, monitor='val_loss')
         trainer = lightning.Trainer(
             max_epochs=512,
             precision='16-mixed',
-            callbacks=[early_stop_callback, checkpoint_callback],
+            callbacks=[early_stop_callback, checkpoint_callback, prune_callback],
             logger=False,
             enable_checkpointing=True,
             enable_progress_bar=False,
@@ -592,15 +609,16 @@ def train_model(configuration):
         val_loss = trainer.callback_metrics.get('val_loss')
         if val_loss is None:
             raise ValueError('Validation loss not found!')
-        param_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        return val_loss.item(), param_count
+        #param_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        return val_loss.item()
 
     logging.getLogger('lightning.pytorch').setLevel(logging.ERROR)
-    module = optunahub.load_module(package='samplers/auto_sampler')
-    study = optuna.create_study(sampler=module.AutoSampler(), directions=['minimize', 'minimize'])
+    study = optuna.create_study(direction='minimize')
+    consecutive_prune_callback = ConsecutivePrunedTrialsCallback(tuning_patience)
     study.optimize(
         objective,
-        n_trials=(50 if model_structure == [] else 1),
+        n_trials=512,
+        callbacks=[consecutive_prune_callback],
         gc_after_trial=True
     )
 
